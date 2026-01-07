@@ -1,104 +1,72 @@
-"""
-Main entry point for the RFQ System application.
-"""
-
 import flet as ft
 from config import TRANSLATIONS
 import database
 
 def main(page: ft.Page):
-    """
-    Main function to initialize the application and setup navigation.
-    """
     database.init_db()
     page.title = "RFQ System"
     page.theme_mode = ft.ThemeMode.LIGHT
+    page.window_width = 1200
+    page.window_height = 800
 
-    # Default Language
+    # 語言與翻譯
     current_lang = "zh"
     t = TRANSLATIONS[current_lang]
 
-    # Destination Index
-    def on_nav_change(e):
-        selected_index = e.control.selected_index
-        if selected_index == 0:
-            page.go("/supplier")
-        elif selected_index == 1:
-            page.go("/rfq")
-        elif selected_index == 2:
-            page.go("/template")
+    # 右側主內容區域容器
+    content_area = ft.Column([ft.Text(t["supplier_management"], size=30)], expand=True)
 
+    # 切換頁面邏輯 (最高 CP 值：不切換路由，只換內容)
+    def on_nav_change(e):
+        index = e.control.selected_index
+        if index == 0:
+            content_area.controls = [ft.Text(t["supplier_management"], size=30)]
+        elif index == 1:
+            content_area.controls = [ft.Text(t["rfq_analysis"], size=30)]
+        elif index == 2:
+            content_area.controls = [ft.Text(t["template_settings"], size=30)]
+        page.update()
+
+    # 側邊導覽欄
     rail = ft.NavigationRail(
         selected_index=0,
         label_type=ft.NavigationRailLabelType.ALL,
         min_width=100,
-        min_extended_width=400,
+        min_extended_width=200,
         group_alignment=-0.9,
         destinations=[
             ft.NavigationRailDestination(
-                icon=ft.Icons.PERSON,
-                selected_icon=ft.Icons.PERSON_OUTLINE,
+                icon=ft.Icons.PERSON_OUTLINE,
+                selected_icon=ft.Icons.PERSON,
                 label=t["supplier_management"]
             ),
             ft.NavigationRailDestination(
-                icon=ft.Icons.ANALYTICS,
-                selected_icon=ft.Icons.ANALYTICS_OUTLINED,
+                icon=ft.Icons.ANALYTICS_OUTLINED,
+                selected_icon=ft.Icons.ANALYTICS,
                 label=t["rfq_analysis"]
             ),
             ft.NavigationRailDestination(
-                icon=ft.Icons.SETTINGS,
-                selected_icon=ft.Icons.SETTINGS_OUTLINED,
+                icon=ft.Icons.SETTINGS_OUTLINED,
+                selected_icon=ft.Icons.SETTINGS,
                 label=t["template_settings"]
             ),
         ],
         on_change=on_nav_change,
     )
 
-    def route_change(_):
-        page.views.clear()
+    # 核心佈局結構
+    layout = ft.Row(
+        [
+            rail,
+            ft.VerticalDivider(width=1),
+            ft.Container(content=content_area, expand=True, padding=20),
+        ],
+        expand=True,
+    )
 
-        # Update rail selection based on route
-        if page.route == "/supplier":
-            rail.selected_index = 0
-            content = ft.Text(t["supplier_management"])
-        elif page.route == "/rfq":
-            rail.selected_index = 1
-            content = ft.Text(t["rfq_analysis"])
-        elif page.route == "/template":
-            rail.selected_index = 2
-            content = ft.Text(t["template_settings"])
-        else:
-            # Default fallback
-            rail.selected_index = 0
-            content = ft.Text(t["supplier_management"])
-
-        page.views.append(
-            ft.View(
-                page.route,
-                [
-                    ft.Row(
-                        [
-                            rail,
-                            ft.VerticalDivider(width=1),
-                            ft.Column([content], expand=True, alignment=ft.MainAxisAlignment.START),
-                        ],
-                        expand=True,
-                    )
-                ],
-            )
-        )
-        page.update()
-
-    def view_pop(_):
-        if len(page.views) > 1:
-            page.views.pop()
-            top_view = page.views[-1]
-            page.go(top_view.route)
-
-    page.on_route_change = route_change
-    page.on_view_pop = view_pop
-
-    page.go("/supplier")
+    page.add(layout)
 
 if __name__ == "__main__":
-    ft.app(target=main, view=ft.AppView.FLET_APP)
+    # 使用 WEB_BROWSER 模式可以先排除是否為在地視窗渲染問題
+    # 若成功看到畫面，再改回 ft.AppView.FLET_APP
+    ft.app(target=main)
