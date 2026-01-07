@@ -36,8 +36,8 @@ def main(page: ft.Page):
         group_alignment=-0.9,
         destinations=[
             ft.NavigationRailDestination(
-                icon=ft.Icons.PEOPLE,
-                selected_icon=ft.Icons.PEOPLE_OUTLINE,
+                icon=ft.Icons.PERSON,
+                selected_icon=ft.Icons.PERSON_OUTLINE,
                 label=t["supplier_management"]
             ),
             ft.NavigationRailDestination(
