@@ -101,4 +101,4 @@ def main(page: ft.Page):
     page.go("/supplier")
 
 if __name__ == "__main__":
-    ft.app(main)
+    ft.app(target=main, view=ft.AppView.FLET_APP)
