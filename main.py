@@ -16,7 +16,7 @@ def from_json_str(json_str):
 class SupplierManager(ft.Column):
     def __init__(self, page: ft.Page, lang="zh"):
         super().__init__(expand=True)
-        self.page = page
+        self.main_page = page
         self.lang = lang
         self.t = TRANSLATIONS[lang]
         self.opt_trans = OPTION_TRANSLATIONS.get(lang, {})
@@ -150,9 +150,9 @@ class SupplierManager(ft.Column):
     def open_add_dialog(self, e):
         self._clear_inputs()
         self.dialog.title.value = self.t["add_supplier"]
-        self.page.dialog = self.dialog
+        self.main_page.dialog = self.dialog
         self.dialog.open = True
-        self.page.update()
+        self.main_page.update()
 
     def open_edit_dialog(self, s_id):
         supplier = next((s for s in self.suppliers if s[0] == s_id), None)
@@ -171,13 +171,13 @@ class SupplierManager(ft.Column):
         self._set_checked_values(self.check_qualifications, from_json_str(supplier[8]))
 
         self.dialog.title.value = self.t["edit_supplier"]
-        self.page.dialog = self.dialog
+        self.main_page.dialog = self.dialog
         self.dialog.open = True
-        self.page.update()
+        self.main_page.update()
 
     def close_dialog(self, e):
         self.dialog.open = False
-        self.page.update()
+        self.main_page.update()
 
     def save_supplier(self, e):
         name = self.input_name.value
