@@ -1,8 +1,15 @@
+"""
+Main entry point for the RFQ System application.
+"""
+
 import flet as ft
 from config import TRANSLATIONS
 import database
 
 def main(page: ft.Page):
+    """
+    Main function to initialize the application and setup navigation.
+    """
     database.init_db()
     page.title = "RFQ System"
     page.theme_mode = ft.ThemeMode.LIGHT
@@ -29,25 +36,25 @@ def main(page: ft.Page):
         group_alignment=-0.9,
         destinations=[
             ft.NavigationRailDestination(
-                icon=ft.icons.PEOPLE,
-                selected_icon=ft.icons.PEOPLE_OUTLINE,
+                icon=ft.Icons.PEOPLE,
+                selected_icon=ft.Icons.PEOPLE_OUTLINE,
                 label=t["supplier_management"]
             ),
             ft.NavigationRailDestination(
-                icon=ft.icons.ANALYTICS,
-                selected_icon=ft.icons.ANALYTICS_OUTLINED,
+                icon=ft.Icons.ANALYTICS,
+                selected_icon=ft.Icons.ANALYTICS_OUTLINED,
                 label=t["rfq_analysis"]
             ),
             ft.NavigationRailDestination(
-                icon=ft.icons.SETTINGS,
-                selected_icon=ft.icons.SETTINGS_OUTLINED,
+                icon=ft.Icons.SETTINGS,
+                selected_icon=ft.Icons.SETTINGS_OUTLINED,
                 label=t["template_settings"]
             ),
         ],
         on_change=on_nav_change,
     )
 
-    def route_change(e):
+    def route_change(_):
         page.views.clear()
 
         # Update rail selection based on route
@@ -82,7 +89,7 @@ def main(page: ft.Page):
         )
         page.update()
 
-    def view_pop(view):
+    def view_pop(_):
         if len(page.views) > 1:
             page.views.pop()
             top_view = page.views[-1]
@@ -94,4 +101,4 @@ def main(page: ft.Page):
     page.go("/supplier")
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.app(main)
