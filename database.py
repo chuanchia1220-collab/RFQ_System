@@ -130,5 +130,41 @@ def get_templates():
     conn.close()
     return rows
 
+def search_suppliers(materials_list, forms_list):
+    """
+    Searches for suppliers that match at least one material OR one form.
+    Args:
+        materials_list (list): List of material strings.
+        forms_list (list): List of form strings.
+    Returns:
+        list: List of matching supplier rows.
+    """
+    import json
+
+    all_suppliers = get_suppliers()
+    matched_suppliers = []
+
+    target_materials = set(materials_list)
+    target_forms = set(forms_list)
+
+    for supplier in all_suppliers:
+        # Supplier columns: id, name, contact, email, phone, address, materials, forms, ...
+        # indexes: 0, 1, 2, 3, 4, 5, 6, 7
+        try:
+            s_materials = set(json.loads(supplier[6])) if supplier[6] else set()
+            s_forms = set(json.loads(supplier[7])) if supplier[7] else set()
+
+            # Check for intersection
+            mat_match = not s_materials.isdisjoint(target_materials)
+            form_match = not s_forms.isdisjoint(target_forms)
+
+            if mat_match or form_match:
+                matched_suppliers.append(supplier)
+
+        except json.JSONDecodeError:
+            continue
+
+    return matched_suppliers
+
 if __name__ == "__main__":
     init_db()

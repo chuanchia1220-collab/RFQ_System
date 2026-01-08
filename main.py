@@ -2,6 +2,7 @@ import flet as ft
 import json
 from config import TRANSLATIONS, OPTIONS, OPTION_TRANSLATIONS
 import database
+import analyzer
 
 # --- 工具函數 ---
 def to_json_str(data_list):
@@ -171,6 +172,116 @@ class SupplierManager(ft.Column):
         database.delete_supplier(s_id)
         self.load_data()
 
+# --- 詢價解析組件 ---
+class RFQAnalyzer(ft.Column):
+    def __init__(self, page: ft.Page, lang="zh"):
+        super().__init__(expand=True)
+        self.main_page = page
+        self.lang = lang
+        self.t = TRANSLATIONS[lang]
+        self.opt_trans = OPTION_TRANSLATIONS.get(lang, {})
+
+        # 1. UI Components
+        self.input_text = ft.TextField(
+            multiline=True,
+            min_lines=10,
+            label="貼上詢價 Email 內容",
+            expand=True
+        )
+
+        self.analyze_btn = ft.ElevatedButton(
+            "開始解析",
+            icon=ft.Icons.ANALYTICS,
+            on_click=self.run_analysis
+        )
+
+        self.result_table = ft.DataTable(
+            columns=[
+                ft.DataColumn(ft.Text("供應商名稱")),
+                ft.DataColumn(ft.Text("匹配原因")),
+                ft.DataColumn(ft.Text("聯繫方式")),
+            ],
+            rows=[]
+        )
+
+        self.controls = [
+            ft.Text(self.t["rfq_analysis"], size=30),
+            ft.Divider(),
+            ft.Row([self.input_text], expand=False),
+            ft.Row([self.analyze_btn], alignment=ft.MainAxisAlignment.END),
+            ft.Divider(),
+            ft.Text("推薦廠商", size=20, weight=ft.FontWeight.BOLD),
+            ft.Row([self.result_table], scroll=ft.ScrollMode.AUTO, expand=True)
+        ]
+
+    def run_analysis(self, e):
+        # 1. Show loading (optional, but good UX)
+        self.analyze_btn.disabled = True
+        self.analyze_btn.text = "解析中..."
+        self.main_page.update()
+
+        try:
+            # 2. Call Analyzer
+            text = self.input_text.value
+            if not text:
+                self.reset_btn()
+                return
+
+            analysis_result = analyzer.analyze_rfq(text)
+            materials = analysis_result.get("materials", [])
+            forms = analysis_result.get("forms", [])
+
+            # 3. Search Database
+            matched_suppliers = database.search_suppliers(materials, forms)
+
+            # 4. Update UI
+            self.result_table.rows = []
+
+            target_materials = set(materials)
+            target_forms = set(forms)
+
+            for s in matched_suppliers:
+                # s: id, name, contact, email, phone, address, materials, forms, ...
+                s_materials = set(json.loads(s[6])) if s[6] else set()
+                s_forms = set(json.loads(s[7])) if s[7] else set()
+
+                matched_mats = s_materials.intersection(target_materials)
+                matched_forms = s_forms.intersection(target_forms)
+
+                reasons = []
+                if matched_mats:
+                    translated_mats = [self.opt_trans.get(m, m) for m in matched_mats]
+                    reasons.append(f"材料: {', '.join(translated_mats)}")
+                if matched_forms:
+                    translated_forms = [self.opt_trans.get(f, f) for f in matched_forms]
+                    reasons.append(f"形狀: {', '.join(translated_forms)}")
+
+                contact_info = f"{s[2]} ({s[3]})"
+
+                self.result_table.rows.append(
+                    ft.DataRow(cells=[
+                        ft.DataCell(ft.Text(s[1])),
+                        ft.DataCell(ft.Text("; ".join(reasons))),
+                        ft.DataCell(ft.Text(contact_info)),
+                    ])
+                )
+
+            if not matched_suppliers:
+                 self.main_page.snack_bar = ft.SnackBar(ft.Text("未找到匹配的供應商"))
+                 self.main_page.snack_bar.open = True
+
+        except Exception as ex:
+            self.main_page.snack_bar = ft.SnackBar(ft.Text(f"發生錯誤: {str(ex)}"))
+            self.main_page.snack_bar.open = True
+
+        finally:
+            self.reset_btn()
+            self.main_page.update()
+
+    def reset_btn(self):
+        self.analyze_btn.disabled = False
+        self.analyze_btn.text = "開始解析"
+
 # --- 主程式 ---
 def main(page: ft.Page):
     database.init_db()
@@ -181,6 +292,7 @@ def main(page: ft.Page):
     current_lang = "zh"
     t = TRANSLATIONS[current_lang]
     supplier_manager = SupplierManager(page, current_lang)
+    rfq_analyzer = RFQAnalyzer(page, current_lang)
     content_area = ft.Container(content=supplier_manager, expand=True, padding=20)
 
     def on_nav_change(e):
@@ -190,7 +302,7 @@ def main(page: ft.Page):
             supplier_manager.load_data()
             content_area.content = supplier_manager
         elif index == 1:
-            content_area.content = ft.Text(t["rfq_analysis"], size=30)
+            content_area.content = rfq_analyzer
         elif index == 2:
             content_area.content = ft.Text(t["template_settings"], size=30)
         page.update()
