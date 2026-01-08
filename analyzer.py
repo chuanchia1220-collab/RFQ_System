@@ -54,10 +54,16 @@ def analyze_rfq(text):
 
         result = json.loads(content)
 
-        # Ensure keys exist
+        # Filter against strict valid options
+        valid_materials = OPTIONS["material_types"]
+        valid_forms = OPTIONS["form_types"]
+
+        extracted_materials = [m for m in result.get("materials", []) if m in valid_materials]
+        extracted_forms = [f for f in result.get("forms", []) if f in valid_forms]
+
         return {
-            "materials": result.get("materials", []),
-            "forms": result.get("forms", [])
+            "materials": extracted_materials,
+            "forms": extracted_forms
         }
 
     except Exception as e:

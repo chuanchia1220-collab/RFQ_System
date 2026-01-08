@@ -139,32 +139,42 @@ def search_suppliers(materials_list, forms_list):
     Returns:
         list: List of matching supplier rows.
     """
-    import json
+    conn = get_connection()
+    cursor = conn.cursor()
 
-    all_suppliers = get_suppliers()
-    matched_suppliers = []
+    conditions = []
+    params = []
 
-    target_materials = set(materials_list)
-    target_forms = set(forms_list)
+    # Filter for materials (JSON array of strings)
+    # Using LIKE '%"Material"%' to ensure strict match within JSON array
+    if materials_list:
+        mat_conditions = []
+        for m in materials_list:
+            mat_conditions.append("materials LIKE ?")
+            params.append(f'%"{m}"%')
+        if mat_conditions:
+            conditions.append(f"({' OR '.join(mat_conditions)})")
 
-    for supplier in all_suppliers:
-        # Supplier columns: id, name, contact, email, phone, address, materials, forms, ...
-        # indexes: 0, 1, 2, 3, 4, 5, 6, 7
-        try:
-            s_materials = set(json.loads(supplier[6])) if supplier[6] else set()
-            s_forms = set(json.loads(supplier[7])) if supplier[7] else set()
+    # Filter for forms
+    if forms_list:
+        form_conditions = []
+        for f in forms_list:
+            form_conditions.append("forms LIKE ?")
+            params.append(f'%"{f}"%')
+        if form_conditions:
+            conditions.append(f"({' OR '.join(form_conditions)})")
 
-            # Check for intersection
-            mat_match = not s_materials.isdisjoint(target_materials)
-            form_match = not s_forms.isdisjoint(target_forms)
+    # Combine with OR: (mat1 OR mat2) OR (form1 OR form2)
+    # The requirement is match at least one material OR one form.
+    if not conditions:
+        return []
 
-            if mat_match or form_match:
-                matched_suppliers.append(supplier)
+    sql = f"SELECT * FROM suppliers WHERE {' OR '.join(conditions)}"
 
-        except json.JSONDecodeError:
-            continue
-
-    return matched_suppliers
+    cursor.execute(sql, params)
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
 
 if __name__ == "__main__":
     init_db()
