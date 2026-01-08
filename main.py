@@ -27,7 +27,6 @@ class SupplierManager(ft.Column):
         self.suppliers = []
         self.editing_id = None
         
-        # 1. 初始化輸入欄位
         self.input_name = ft.TextField(label=self.t["name"])
         self.input_contact = ft.TextField(label=self.t["contact"])
         self.input_email = ft.TextField(label=self.t["email"])
@@ -37,7 +36,6 @@ class SupplierManager(ft.Column):
         self.check_forms = self._create_checkbox_group(OPTIONS["form_types"])
         self.check_qualifications = self._create_checkbox_group(OPTIONS["qualifications"])
 
-        # 2. 建立對話框
         self.dialog = ft.AlertDialog(
             title=ft.Text(self.t["add_supplier"]),
             content=ft.Container(
@@ -55,11 +53,8 @@ class SupplierManager(ft.Column):
                 ft.TextButton(self.t["save"], on_click=self.save_supplier),
             ],
         )
-
-        # 3. 掛載對話框至 Overlay
         self.main_page.overlay.append(self.dialog)
 
-        # 4. UI 佈局
         self.data_table = ft.DataTable(
             columns=[ft.DataColumn(ft.Text(self.t[k])) for k in ["name", "contact", "phone", "materials", "forms", "qualifications", "actions"]],
             rows=[]
@@ -77,7 +72,6 @@ class SupplierManager(ft.Column):
             ft.Row([self.data_table], scroll=ft.ScrollMode.AUTO, expand=True)
         ]
 
-    # --- 邏輯函數 ---
     def _create_checkbox_group(self, options):
         return ft.Column([
             ft.Checkbox(label=self.opt_trans.get(opt, opt), value=False, data=opt)
@@ -126,10 +120,9 @@ class SupplierManager(ft.Column):
                     ])),
                 ])
             )
-        self.update()
         try:
             self.update()
-        except RuntimeError:
+        except Exception:
             pass
 
     def open_add_dialog(self, e):
@@ -177,7 +170,7 @@ class SupplierManager(ft.Column):
         database.delete_supplier(s_id)
         self.load_data()
 
-# --- Template Settings Component ---
+# --- 樣板管理組件 ---
 class TemplateManager(ft.Column):
     def __init__(self, page: ft.Page):
         super().__init__(expand=True)
@@ -194,10 +187,7 @@ class TemplateManager(ft.Column):
             title=ft.Text("Add Template"),
             content=ft.Container(
                 content=ft.Column([
-                    self.input_name,
-                    self.input_subject,
-                    self.input_preamble,
-                    self.input_closing
+                    self.input_name, self.input_subject, self.input_preamble, self.input_closing
                 ], scroll=ft.ScrollMode.AUTO),
                 width=600, height=500
             ),
@@ -233,7 +223,6 @@ class TemplateManager(ft.Column):
         self.templates = database.get_templates()
         self.data_table.rows = []
         for t in self.templates:
-            # id, name, subject, preamble, closing, ...
             t_id = t[0]
             self.data_table.rows.append(
                 ft.DataRow(cells=[
@@ -245,7 +234,10 @@ class TemplateManager(ft.Column):
                     ])),
                 ])
             )
-        self.update()
+        try:
+            self.update()
+        except Exception:
+            pass
 
     def open_add_dialog(self, e):
         self.editing_id = None
@@ -275,20 +267,9 @@ class TemplateManager(ft.Column):
 
     def save_template(self, e):
         if self.editing_id:
-            database.update_template(
-                self.editing_id,
-                self.input_name.value,
-                self.input_subject.value,
-                self.input_preamble.value,
-                self.input_closing.value
-            )
+            database.update_template(self.editing_id, self.input_name.value, self.input_subject.value, self.input_preamble.value, self.input_closing.value)
         else:
-            database.add_template(
-                self.input_name.value,
-                self.input_subject.value,
-                self.input_preamble.value,
-                self.input_closing.value
-            )
+            database.add_template(self.input_name.value, self.input_subject.value, self.input_preamble.value, self.input_closing.value)
         self.close_dialog(None)
         self.load_data()
 
@@ -304,9 +285,8 @@ class RFQAnalyzer(ft.Column):
         self.lang = lang
         self.t = TRANSLATIONS[lang]
         self.opt_trans = OPTION_TRANSLATIONS.get(lang, {})
-        self.analyzed_items = [] # Stores detailed analysis
+        self.analyzed_items = []
 
-        # 1. UI Components
         self.input_text = ft.TextField(
             multiline=True,
             min_lines=10,
@@ -320,7 +300,6 @@ class RFQAnalyzer(ft.Column):
             on_click=self.run_analysis
         )
 
-        # Container for results (dynamic list of cards)
         self.results_container = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
 
         self.controls = [
@@ -336,8 +315,7 @@ class RFQAnalyzer(ft.Column):
     def run_analysis(self, e):
         self.analyze_btn.disabled = True
         self.analyze_btn.text = "解析中..."
-        if self.main_page:
-             self.main_page.update()
+        self.main_page.update()
 
         try:
             text = self.input_text.value
@@ -345,38 +323,24 @@ class RFQAnalyzer(ft.Column):
                 self.reset_btn()
                 return
 
-            # Analyze (returns complex JSON)
             analysis_result = analyzer.analyze_rfq(text)
             self.analyzed_items = analysis_result.get("items", [])
-
-            # Save Request
             req_id = database.save_rfq_request(text, json.dumps(self.analyzed_items))
 
             self.results_container.controls = []
 
             for item in self.analyzed_items:
-                # item: {item_index, material_type, form, spec: {...}, confidence}
                 mat_type = item.get("material_type", "Other")
                 form_type = item.get("form", "Other")
                 spec = item.get("spec", {})
                 dims = spec.get("dimensions", {})
 
-                # Search Suppliers
                 matched_suppliers = database.search_suppliers([mat_type], [form_type])
                 matched_ids = [s[0] for s in matched_suppliers]
-
-                # Save Item
                 database.save_rfq_item(req_id, item.get("item_index"), mat_type, form_type, json.dumps(spec), matched_ids)
 
-                # Build Card
                 supplier_options = [ft.dropdown.Option(str(s[0]), f"{s[1]} ({s[2]})") for s in matched_suppliers]
-
-                supplier_dropdown = ft.Dropdown(
-                    label="選擇供應商",
-                    options=supplier_options,
-                    width=300
-                )
-
+                supplier_dropdown = ft.Dropdown(label="選擇供應商", options=supplier_options, width=300)
                 spec_text = f"Dims: {dims} | Qty: {spec.get('annual_qty')} {spec.get('unit')}"
 
                 draft_btn = ft.ElevatedButton(
@@ -394,10 +358,7 @@ class RFQAnalyzer(ft.Column):
                                 title=ft.Text(f"{mat_type} - {form_type}"),
                                 subtitle=ft.Text(spec_text),
                             ),
-                            ft.Row([
-                                supplier_dropdown,
-                                draft_btn
-                            ], alignment=ft.MainAxisAlignment.END)
+                            ft.Row([supplier_dropdown, draft_btn], alignment=ft.MainAxisAlignment.END)
                         ])
                     )
                 )
@@ -408,11 +369,8 @@ class RFQAnalyzer(ft.Column):
                  self.main_page.snack_bar.open = True
 
         except Exception as ex:
-            import traceback
-            traceback.print_exc()
             self.main_page.snack_bar = ft.SnackBar(ft.Text(f"發生錯誤: {str(ex)}"))
             self.main_page.snack_bar.open = True
-
         finally:
             self.reset_btn()
             self.main_page.update()
@@ -428,48 +386,33 @@ class RFQAnalyzer(ft.Column):
             self.main_page.snack_bar.open = True
             self.main_page.update()
             return
-
-        # Get supplier details
+        
         suppliers = database.get_suppliers()
         supplier = next((s for s in suppliers if str(s[0]) == str(supplier_id)), None)
-
-        # Get Default Template (Mock - take first)
         templates = database.get_templates()
         template = templates[0] if templates else (0, "Default", "Inquiry {date}", "<p>Hi,</p>", "<p>Thanks</p>")
 
         from datetime import datetime
         subject = template[2].format(date=datetime.now().strftime("%Y%m%d")) + f"_{supplier[1]}"
-
-        # Determine platform
-        is_windows = os.name == 'nt'
-
+        
         try:
-            if is_windows:
-                try:
-                    import win32com.client
-                    outlook = win32com.client.Dispatch('Outlook.Application')
-                    mail = outlook.CreateItem(0)
-                    mail.Subject = subject
-                    mail.HTMLBody = f"{template[3]}<br>Item: {item['material_type']} {item['form']}<br>Spec: {item['spec']}<br>{template[4]}"
-                    mail.To = supplier[3]
-                    mail.Save() # Draft
-                    msg = "Outlook 草稿已建立"
-                except ImportError:
-                     msg = "無法載入 win32com，已模擬草稿建立 (Log Only)"
-                     print(f"[MOCK EMAIL] To: {supplier[3]}, Subject: {subject}")
+            if os.name == 'nt':
+                import win32com.client
+                outlook = win32com.client.Dispatch('Outlook.Application')
+                mail = outlook.CreateItem(0)
+                mail.Subject = subject
+                mail.HTMLBody = f"{template[3]}<br>Item: {item['material_type']} {item['form']}<br>Spec: {item['spec']}<br>{template[4]}"
+                mail.To = supplier[3]
+                mail.Save()
+                msg = "Outlook 草稿已建立"
             else:
-                # Linux/Mac Environment Mock
-                msg = f"非 Windows 環境: 已模擬建立草稿給 {supplier[1]}"
-                print(f"--- MOCK DRAFT ---\nTo: {supplier[3]}\nSubject: {subject}\nBody: {template[3]}...")
-
+                msg = f"已模擬建立草稿給 {supplier[1]}"
             self.main_page.snack_bar = ft.SnackBar(ft.Text(msg))
             self.main_page.snack_bar.open = True
-            self.main_page.update()
-
         except Exception as ex:
             self.main_page.snack_bar = ft.SnackBar(ft.Text(f"草稿建立失敗: {str(ex)}"))
             self.main_page.snack_bar.open = True
-            self.main_page.update()
+        self.main_page.update()
 
 # --- 主程式 ---
 def main(page: ft.Page):
@@ -480,24 +423,22 @@ def main(page: ft.Page):
 
     current_lang = "zh"
     t = TRANSLATIONS[current_lang]
-
     supplier_manager = SupplierManager(page, current_lang)
     rfq_analyzer = RFQAnalyzer(page, current_lang)
     template_manager = TemplateManager(page)
-
     content_area = ft.Container(content=supplier_manager, expand=True, padding=20)
 
     def on_nav_change(e):
         index = e.control.selected_index
         content_area.content = None
         if index == 0:
-            supplier_manager.load_data()
-            content_area.content = supplier_manager
+            content_area.content = supplier_manager # 先加入頁面
+            supplier_manager.load_data()           # 後讀取資料
         elif index == 1:
             content_area.content = rfq_analyzer
         elif index == 2:
-            template_manager.load_data()
-            content_area.content = template_manager
+            content_area.content = template_manager # 先加入頁面
+            template_manager.load_data()            # 後讀取資料
         page.update()
 
     rail = ft.NavigationRail(
@@ -513,7 +454,6 @@ def main(page: ft.Page):
         ],
         on_change=on_nav_change,
     )
-
     page.add(ft.Row([rail, ft.VerticalDivider(width=1), content_area], expand=True))
     supplier_manager.load_data()
 
