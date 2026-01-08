@@ -151,7 +151,6 @@ class SupplierManager(ft.Column):
         self._clear_inputs()
         self.dialog.title.value = self.t["add_supplier"]
         self.main_page.open(self.dialog)
-        self.dialog.open = True
         self.main_page.update()
 
     def open_edit_dialog(self, s_id):
@@ -171,8 +170,7 @@ class SupplierManager(ft.Column):
         self._set_checked_values(self.check_qualifications, from_json_str(supplier[8]))
         
         self.dialog.title.value = self.t["edit_supplier"]
-        self.main_page.dialog = self.dialog
-        self.dialog.open = True
+        self.main_page.open(self.dialog)
         self.main_page.update()
 
     def close_dialog(self, e):
