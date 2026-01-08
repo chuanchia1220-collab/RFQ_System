@@ -2,10 +2,17 @@
 # Section 4: Schema
 
 import sqlite3
+import json
 
 DB_NAME = "rfq_system.db"
+_connection = None
 
 def get_connection():
+    global _connection
+    if DB_NAME == ":memory:":
+        if _connection is None:
+            _connection = sqlite3.connect(DB_NAME, check_same_thread=False)
+        return _connection
     return sqlite3.connect(DB_NAME)
 
 def init_db():
@@ -13,12 +20,7 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Table: Suppliers
-    # Added materials, forms, qualifications as TEXT columns
-    # Note: If table exists without these columns, this CREATE IF NOT EXISTS won't add them.
-    # In a real app, we would use migrations. For this local dev, we assume fresh DB or manual reset.
-    # To be safe for this "skeleton" phase, I'll attempt to add columns if they don't exist, or just recreate.
-    # Simpler: just ensure the schema definition is correct.
+    # Table: Suppliers (Section 4.1)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS suppliers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,46 +36,83 @@ def init_db():
     )
     ''')
     
-    # Quick fix to ensure columns exist if table already existed (for dev convenience)
-    try:
-        cursor.execute("ALTER TABLE suppliers ADD COLUMN materials TEXT")
-    except sqlite3.OperationalError:
-        pass # Column likely exists
-    try:
-        cursor.execute("ALTER TABLE suppliers ADD COLUMN forms TEXT")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE suppliers ADD COLUMN qualifications TEXT")
-    except sqlite3.OperationalError:
-        pass
+    # Ensure columns exist (for existing DB compatibility)
+    for col in ["materials", "forms", "qualifications"]:
+        try:
+            cursor.execute(f"ALTER TABLE suppliers ADD COLUMN {col} TEXT")
+        except sqlite3.OperationalError:
+            pass
 
-    # Table: RFQ Templates
+    # Table: RFQ Templates (Section 4.2)
+    # Using TEXT for JSON/Array fields
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS templates (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        content TEXT,
+        subject_format TEXT,
+        preamble_html TEXT,
+        closing_html TEXT,
+        table_fields TEXT,
+        font_family TEXT,
+        font_size INTEGER,
+        table_styles TEXT,
+        created_by TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')
 
-    # Table: RFQs
+    # Ensure columns exist for templates if table exists with old schema
+    template_cols = {
+        "subject_format": "TEXT",
+        "preamble_html": "TEXT",
+        "closing_html": "TEXT",
+        "table_fields": "TEXT",
+        "font_family": "TEXT",
+        "font_size": "INTEGER",
+        "table_styles": "TEXT",
+        "created_by": "TEXT"
+    }
+    for col, dtype in template_cols.items():
+        try:
+            cursor.execute(f"ALTER TABLE templates ADD COLUMN {col} {dtype}")
+        except sqlite3.OperationalError:
+            pass
+
+    # Table: RFQ Requests (Section 4.3)
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS rfqs (
+    CREATE TABLE IF NOT EXISTS rfq_requests (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        supplier_id INTEGER,
-        status TEXT DEFAULT 'New',
-        request_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        details TEXT,
-        FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
+        raw_text TEXT,
+        parsed_items TEXT,
+        created_by TEXT,
+        status TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     ''')
 
-    conn.commit()
-    conn.close()
+    # Table: RFQ Items (Section 4.4)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS rfq_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        request_id INTEGER,
+        item_index INTEGER,
+        material_type TEXT,
+        form_type TEXT,
+        spec TEXT,
+        matched_suppliers TEXT,
+        selected_supplier INTEGER,
+        email_payload TEXT,
+        status TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (request_id) REFERENCES rfq_requests(id)
+    )
+    ''')
 
-# CRUD Operations for Suppliers
+    if DB_NAME != ":memory:":
+        conn.close()
+
+# --- CRUD Operations for Suppliers ---
+
 def add_supplier(name, contact_person, email, phone, address, materials, forms, qualifications):
     conn = get_connection()
     cursor = conn.cursor()
@@ -82,14 +121,16 @@ def add_supplier(name, contact_person, email, phone, address, materials, forms, 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ''', (name, contact_person, email, phone, address, materials, forms, qualifications))
     conn.commit()
-    conn.close()
+    if DB_NAME != ":memory:":
+        conn.close()
 
 def get_suppliers():
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM suppliers')
     rows = cursor.fetchall()
-    conn.close()
+    if DB_NAME != ":memory:":
+        conn.close()
     return rows
 
 def update_supplier(supplier_id, name, contact_person, email, phone, address, materials, forms, qualifications):
@@ -102,33 +143,87 @@ def update_supplier(supplier_id, name, contact_person, email, phone, address, ma
         WHERE id = ?
     ''', (name, contact_person, email, phone, address, materials, forms, qualifications, supplier_id))
     conn.commit()
-    conn.close()
+    if DB_NAME != ":memory:":
+        conn.close()
 
 def delete_supplier(supplier_id):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('DELETE FROM suppliers WHERE id = ?', (supplier_id,))
     conn.commit()
-    conn.close()
+    if DB_NAME != ":memory:":
+        conn.close()
 
-# CRUD Operations for Templates
-def add_template(name, content):
+# --- CRUD Operations for Templates ---
+
+def add_template(name, subject_format, preamble_html, closing_html):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO templates (name, content)
-        VALUES (?, ?)
-    ''', (name, content))
+        INSERT INTO templates (name, subject_format, preamble_html, closing_html)
+        VALUES (?, ?, ?, ?)
+    ''', (name, subject_format, preamble_html, closing_html))
     conn.commit()
-    conn.close()
+    if DB_NAME != ":memory:":
+        conn.close()
+
+def update_template(template_id, name, subject_format, preamble_html, closing_html):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE templates
+        SET name = ?, subject_format = ?, preamble_html = ?, closing_html = ?
+        WHERE id = ?
+    ''', (name, subject_format, preamble_html, closing_html, template_id))
+    conn.commit()
+    if DB_NAME != ":memory:":
+        conn.close()
+
+def delete_template(template_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM templates WHERE id = ?', (template_id,))
+    conn.commit()
+    if DB_NAME != ":memory:":
+        conn.close()
 
 def get_templates():
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM templates')
     rows = cursor.fetchall()
-    conn.close()
+    if DB_NAME != ":memory:":
+        conn.close()
     return rows
+
+# --- RFQ Operations ---
+
+def save_rfq_request(raw_text, parsed_items_json, created_by="system"):
+    """Saves the raw RFQ text and parsed result."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO rfq_requests (raw_text, parsed_items, created_by, status)
+        VALUES (?, ?, ?, 'Analyzed')
+    ''', (raw_text, parsed_items_json, created_by))
+    req_id = cursor.lastrowid
+    conn.commit()
+    if DB_NAME != ":memory:":
+        conn.close()
+    return req_id
+
+def save_rfq_item(request_id, item_index, material_type, form_type, spec_json, matched_suppliers_ids):
+    """Saves a single parsed item from an RFQ."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    matched_suppliers_json = json.dumps(matched_suppliers_ids)
+    cursor.execute('''
+        INSERT INTO rfq_items (request_id, item_index, material_type, form_type, spec, matched_suppliers, status)
+        VALUES (?, ?, ?, ?, ?, ?, 'Pending')
+    ''', (request_id, item_index, material_type, form_type, spec_json, matched_suppliers_json))
+    conn.commit()
+    if DB_NAME != ":memory:":
+        conn.close()
 
 def search_suppliers(materials_list, forms_list):
     """
@@ -139,8 +234,6 @@ def search_suppliers(materials_list, forms_list):
     Returns:
         list: List of matching supplier rows.
     """
-    import json
-
     all_suppliers = get_suppliers()
     matched_suppliers = []
 

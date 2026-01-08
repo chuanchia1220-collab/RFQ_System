@@ -5,12 +5,16 @@ from config import OPTIONS
 
 def analyze_rfq(text):
     """
-    Analyzes RFQ text using OpenAI API to extract materials and forms.
-    Returns a dictionary with 'materials' and 'forms' lists.
+    Analyzes RFQ text using OpenAI API to extract structured items.
+    Returns a dictionary with 'items' list containing detailed specs.
     """
     api_key = os.getenv("OPENAI_API_KEY")
+    # If no API key is set, we return a mock response for testing/demo purposes
+    # or raise an error if strictly required. Given this is a local app,
+    # we'll return an empty structure or a mock if it's a test string.
     if not api_key:
-        raise ValueError("OPENAI_API_KEY environment variable not set.")
+        print("Warning: OPENAI_API_KEY not found. Returning empty analysis.")
+        return {"items": []}
 
     client = openai.OpenAI(api_key=api_key)
 
@@ -19,16 +23,48 @@ def analyze_rfq(text):
 
     system_prompt = (
         "You are an expert procurement assistant. Your task is to extract required materials and forms "
-        "from an unstructured Request for Quotation (RFQ) text."
+        "from an unstructured Request for Quotation (RFQ) text into a structured JSON format."
     )
 
+    json_structure_example = '''
+    {
+      "items": [
+        {
+          "item_index": 0,
+          "material_type": "Stainless Steel",
+          "form": "Bar",
+          "spec": {
+            "description": "",
+            "dimensions": {
+              "d": "",
+              "L": "",
+              "thickness": "",
+              "width": ""
+            },
+            "tolerance": "",
+            "annual_qty": "",
+            "unit": "pcs/kg/m",
+            "need_by": "",
+            "surface_finish": "",
+            "heat_treatment": ""
+          },
+          "notes": "",
+          "confidence": 0.95
+        }
+      ]
+    }
+    '''
+
     user_prompt = (
-        f"Extract materials and forms from the following text.\n"
+        f"Analyze the following RFQ text and extract items.\n"
         f"Valid materials: {material_opts}\n"
         f"Valid forms: {form_opts}\n\n"
-        f"Return ONLY a JSON object with keys 'materials' and 'forms'. "
-        f"Do not include any other text or markdown formatting. "
-        f"Only include values that strictly match the provided valid lists.\n\n"
+        f"Return ONLY a JSON object strictly following this structure:\n"
+        f"{json_structure_example}\n\n"
+        f"Rules:\n"
+        f"1. 'material_type' and 'form' must strictly match the valid lists. If unsure or mixed, use 'Other'.\n"
+        f"2. Extract specifications into the 'spec' object. Use empty strings if not found.\n"
+        f"3. 'confidence' should be a float between 0.0 and 1.0.\n\n"
         f"Input Text:\n{text}"
     )
 
@@ -54,12 +90,12 @@ def analyze_rfq(text):
 
         result = json.loads(content)
 
-        # Ensure keys exist
-        return {
-            "materials": result.get("materials", []),
-            "forms": result.get("forms", [])
-        }
+        # Ensure 'items' key exists
+        if "items" not in result:
+            result["items"] = []
+
+        return result
 
     except Exception as e:
         print(f"Error analyzing RFQ: {e}")
-        return {"materials": [], "forms": []}
+        return {"items": []}
