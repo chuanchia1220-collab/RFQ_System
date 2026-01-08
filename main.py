@@ -40,7 +40,7 @@ class SupplierManager(ft.Column):
         )
         
         self.add_btn = ft.ElevatedButton(
-            text=self.t["add_supplier"],
+            self.t["add_supplier"],
             icon=ft.Icons.ADD,
             on_click=self.open_add_dialog
         )
