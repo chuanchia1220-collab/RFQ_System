@@ -49,8 +49,8 @@ class SupplierManager(ft.Column):
                 width=500, height=600
             ),
             actions=[
-                ft.TextButton(text=self.t["cancel"], on_click=self.close_dialog),
-                ft.TextButton(text=self.t["save"], on_click=self.save_supplier),
+                ft.TextButton(self.t["cancel"], on_click=self.close_dialog),
+                ft.TextButton(self.t["save"], on_click=self.save_supplier),
             ],
         )
 
