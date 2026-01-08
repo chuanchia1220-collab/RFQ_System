@@ -127,6 +127,10 @@ class SupplierManager(ft.Column):
                 ])
             )
         self.update()
+        try:
+            self.update()
+        except RuntimeError:
+            pass
 
     def open_add_dialog(self, e):
         self._clear_inputs()
