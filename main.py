@@ -126,7 +126,8 @@ class SupplierManager(ft.Column):
                     ])),
                 ])
             )
-        self.update()
+        if self.page:
+            self.update()
 
     def open_add_dialog(self, e):
         self._clear_inputs()
@@ -241,7 +242,8 @@ class TemplateManager(ft.Column):
                     ])),
                 ])
             )
-        self.update()
+        if self.page:
+            self.update()
 
     def open_add_dialog(self, e):
         self.editing_id = None
