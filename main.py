@@ -21,73 +21,72 @@ class SupplierManager(ft.Column):
         self.t = TRANSLATIONS[lang]
         self.opt_trans = OPTION_TRANSLATIONS.get(lang, {})
         
-        # State variables
+        # 狀態變數
         self.suppliers = []
         self.editing_id = None
         
-        # UI Components
-        self.data_table = ft.DataTable(
-            columns=[
-                ft.DataColumn(ft.Text(self.t["name"])),
-                ft.DataColumn(ft.Text(self.t["contact"])),
-                ft.DataColumn(ft.Text(self.t["phone"])),
-                ft.DataColumn(ft.Text(self.t["materials"])),
-                ft.DataColumn(ft.Text(self.t["forms"])),
-                ft.DataColumn(ft.Text(self.t["qualifications"])),
-                ft.DataColumn(ft.Text(self.t["actions"])),
-            ],
-            rows=[]
-        )
-        
-        self.add_btn = ft.ElevatedButton(
-            self.t["add_supplier"],
-            icon=ft.Icons.ADD,
-            on_click=self.open_add_dialog
-        )
-        
-        # Dialog Inputs
+        # 1. 提早初始化對話框所需控制項
         self.input_name = ft.TextField(label=self.t["name"])
         self.input_contact = ft.TextField(label=self.t["contact"])
         self.input_email = ft.TextField(label=self.t["email"])
         self.input_phone = ft.TextField(label=self.t["phone"])
         self.input_address = ft.TextField(label=self.t["address"])
-        
         self.check_materials = self._create_checkbox_group(OPTIONS["material_types"])
         self.check_forms = self._create_checkbox_group(OPTIONS["form_types"])
         self.check_qualifications = self._create_checkbox_group(OPTIONS["qualifications"])
-        
+
+        # 2. 建立對話框物件
         self.dialog = ft.AlertDialog(
             title=ft.Text(self.t["add_supplier"]),
             content=ft.Container(
                 content=ft.Column([
-                    self.input_name,
-                    self.input_contact,
-                    self.input_email,
-                    self.input_phone,
-                    self.input_address,
-                    ft.Text(self.t["materials"], weight=ft.FontWeight.BOLD),
-                    self.check_materials,
-                    ft.Text(self.t["forms"], weight=ft.FontWeight.BOLD),
-                    self.check_forms,
-                    ft.Text(self.t["qualifications"], weight=ft.FontWeight.BOLD),
-                    self.check_qualifications,
+                    self.input_name, self.input_contact, self.input_email,
+                    self.input_phone, self.input_address,
+                    ft.Text(self.t["materials"], weight=ft.FontWeight.BOLD), self.check_materials,
+                    ft.Text(self.t["forms"], weight=ft.FontWeight.BOLD), self.check_forms,
+                    ft.Text(self.t["qualifications"], weight=ft.FontWeight.BOLD), self.check_qualifications,
                 ], scroll=ft.ScrollMode.AUTO),
-                width=500,
-                height=600
+                width=500, height=600
             ),
             actions=[
-                ft.TextButton(self.t["cancel"], on_click=self.close_dialog),
-                ft.TextButton(self.t["save"], on_click=self.save_supplier),
+                ft.TextButton(text=self.t["cancel"], on_click=self.close_dialog),
+                ft.TextButton(text=self.t["save"], on_click=self.save_supplier),
             ],
-            actions_alignment=ft.MainAxisAlignment.END,
         )
 
+        # 3. 【關鍵修正】將對話框預先加入頁面的圖層 (Overlay)
+        self.main_page.overlay.append(self.dialog)
+
+        # UI 組件 (按鈕與表格)
+        self.data_table = ft.DataTable(
+            columns=[ft.DataColumn(ft.Text(self.t[k])) for k in ["name", "contact", "phone", "materials", "forms", "qualifications", "actions"]],
+            rows=[]
+        )
+        
+        self.add_btn = ft.ElevatedButton(
+            text=self.t["add_supplier"], # 明確使用 text= 關鍵字
+            icon=ft.Icons.ADD,
+            on_click=self.open_add_dialog
+        )
+        
         self.controls = [
             ft.Row([ft.Text(self.t["supplier_management"], size=30), self.add_btn], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             ft.Divider(),
             ft.Row([self.data_table], scroll=ft.ScrollMode.AUTO, expand=True)
         ]
 
+    # --- 邏輯函數 ---
+    def open_add_dialog(self, e):
+        self._clear_inputs()
+        self.dialog.title.value = self.t["add_supplier"]
+        self.dialog.open = True # 直接將已掛載的對話框開啟
+        self.main_page.update()
+
+    def close_dialog(self, e):
+        self.dialog.open = False
+        self.main_page.update()
+
+    # (其餘 _create_checkbox_group, load_data, save_supplier 等函數保持不變)
     def _create_checkbox_group(self, options):
         return ft.Column([
             ft.Checkbox(label=self.opt_trans.get(opt, opt), value=False, data=opt)
