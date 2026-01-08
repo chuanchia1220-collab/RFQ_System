@@ -126,6 +126,7 @@ class SupplierManager(ft.Column):
                     ])),
                 ])
             )
+        self.update()
         try:
             self.update()
         except RuntimeError:
@@ -244,8 +245,7 @@ class TemplateManager(ft.Column):
                     ])),
                 ])
             )
-        if self.page:
-            self.update()
+        self.update()
 
     def open_add_dialog(self, e):
         self.editing_id = None
