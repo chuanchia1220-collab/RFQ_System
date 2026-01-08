@@ -150,7 +150,7 @@ class SupplierManager(ft.Column):
     def open_add_dialog(self, e):
         self._clear_inputs()
         self.dialog.title.value = self.t["add_supplier"]
-        self.main_page.dialog = self.dialog
+        self.main_page.open(self.dialog)
         self.dialog.open = True
         self.main_page.update()
 
