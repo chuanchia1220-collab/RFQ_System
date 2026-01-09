@@ -337,17 +337,19 @@ class RFQAnalyzer(ft.Column):
             for item in self.analyzed_items:
                 # 取得 AI 解析結果
                 mat_type = item.get("material_type", "Other")
+                mat_spec = item.get("material_spec", "-")
                 form_type = item.get("form", "Other")
+                notes = item.get("notes", "-")
                 spec = item.get("spec", {})
                 
-                # 取得尺寸：優先檢查 spec.dimensions 欄位 (支援字串或字典)
+                # 處理尺寸
                 dims_data = spec.get('dimensions', '-')
                 if isinstance(dims_data, dict):
                     dims_str = ", ".join([f"{k}:{v}" for k, v in dims_data.items()])
                 else:
                     dims_str = str(dims_data)
 
-                # 取得數量列表
+                # 處理數量
                 quantities = item.get("quantities", [])
                 if not quantities:
                      single_qty = spec.get("annual_qty", spec.get("quantity", ""))
@@ -365,7 +367,7 @@ class RFQAnalyzer(ft.Column):
                 supplier_dropdown = ft.Dropdown(label="選擇供應商", options=supplier_options, width=300)
                 
                 qty_display = ", ".join([str(q) for q in quantities]) if quantities else "N/A"
-                spec_display_text = f"Dims: {dims_str} | Qty: {qty_display}"
+                spec_display_text = f"Spec: {mat_spec} | Dims: {dims_str} | Qty: {qty_display}"
 
                 draft_btn = ft.Button(
                     "生成草稿",
@@ -380,7 +382,7 @@ class RFQAnalyzer(ft.Column):
                             ft.ListTile(
                                 leading=ft.Icon(ft.Icons.CIRCLE, color=ft.Colors.GREEN if item.get("confidence", 0) > 0.6 else ft.Colors.RED),
                                 title=ft.Text(f"{mat_type} - {form_type}"),
-                                subtitle=ft.Text(spec_display_text),
+                                subtitle=ft.Text(f"{spec_display_text}\nNotes: {notes}"),
                             ),
                             ft.Row([supplier_dropdown, draft_btn], alignment=ft.MainAxisAlignment.END)
                         ])
@@ -407,7 +409,7 @@ class RFQAnalyzer(ft.Column):
         self.analyze_btn.text = "開始解析"
 
     def generate_draft(self, supplier_dropdown, item):
-        print("\n[Draft] 生成表格化草稿...")
+        print("\n[Draft] 生成完整格式草稿...")
         supplier_id = supplier_dropdown.value
         if not supplier_id:
             self.main_page.snack_bar = ft.SnackBar(ft.Text("請先選擇供應商"))
@@ -422,35 +424,52 @@ class RFQAnalyzer(ft.Column):
 
         subject = template[2].format(date=datetime.now().strftime("%Y%m%d")) + f"_{supplier[1]}"
         
-        # 資料提取與表格化處理
-        mat_type = item.get('material_type', '')
-        form_type = item.get('form', '')
-        spec = item.get('spec', {})
+        # 資料提取
+        mat_type = item.get('material_type', '-')
+        mat_spec = item.get('material_spec', '-')
+        form_type = item.get('form', '-')
+        notes = item.get('notes', '-')
+        spec_data = item.get('spec', {})
         
-        # 尺寸處理
-        dims_data = spec.get('dimensions', '-')
+        dims_data = spec_data.get('dimensions', '-')
         if isinstance(dims_data, dict):
             dims_str = ", ".join([f"{k}:{v}" for k, v in dims_data.items()])
         else:
             dims_str = str(dims_data)
 
-        # 處理多數量分行
         quantities = item.get('quantities', [])
         if not quantities:
-            single_qty = spec.get('annual_qty', spec.get('quantity', ''))
+            single_qty = spec_data.get('annual_qty', spec_data.get('quantity', ''))
             quantities = [single_qty] if single_qty else ["-"]
 
         # 建立 HTML 表格
-        table_style = "border-collapse: collapse; width: 100%; font-family: Arial, sans-serif;"
-        th_style = "border: 1px solid #ddd; padding: 12px; background-color: #f8f9fa; text-align: left;"
-        td_style = "border: 1px solid #ddd; padding: 12px;"
+        table_style = "border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 13px;"
+        th_style = "border: 1px solid #333; padding: 10px; background-color: #eee; text-align: left;"
+        td_style = "border: 1px solid #333; padding: 10px;"
         
         table_html = f"<table style='{table_style}'>"
-        table_html += f"<thead><tr><th style='{th_style}'>Material</th><th style='{th_style}'>Form</th><th style='{th_style}'>Dimensions</th><th style='{th_style}'>Quantity</th></tr></thead>"
-        table_html += "<tbody>"
+        table_html += (
+            f"<thead><tr>"
+            f"<th style='{th_style}'>Material</th>"
+            f"<th style='{th_style}'>Specification</th>"
+            f"<th style='{th_style}'>Form</th>"
+            f"<th style='{th_style}'>Dimensions</th>"
+            f"<th style='{th_style}'>Quantity</th>"
+            f"<th style='{th_style}'>Notes</th>"
+            f"</tr></thead><tbody>"
+        )
         
         for qty in quantities:
-            table_html += f"<tr><td style='{td_style}'>{mat_type}</td><td style='{td_style}'>{form_type}</td><td style='{td_style}'>{dims_str}</td><td style='{td_style}'>{qty}</td></tr>"
+            table_html += (
+                f"<tr>"
+                f"<td style='{td_style}'>{mat_type}</td>"
+                f"<td style='{td_style}'>{mat_spec}</td>"
+                f"<td style='{td_style}'>{form_type}</td>"
+                f"<td style='{td_style}'>{dims_str}</td>"
+                f"<td style='{td_style}'>{qty}</td>"
+                f"<td style='{td_style}'>{notes}</td>"
+                f"</tr>"
+            )
         
         table_html += "</tbody></table>"
 
@@ -460,7 +479,6 @@ class RFQAnalyzer(ft.Column):
                 outlook = win32com.client.Dispatch('Outlook.Application')
                 mail = outlook.CreateItem(0)
                 mail.Subject = subject
-                # 組合最終 Email：Preamble + Table + Closing
                 mail.HTMLBody = f"<div>{template[3]}</div><br>{table_html}<br><div>{template[4]}</div>"
                 mail.To = supplier[3]
                 mail.Save()
@@ -470,12 +488,10 @@ class RFQAnalyzer(ft.Column):
             
             self.main_page.snack_bar = ft.SnackBar(ft.Text(msg))
             self.main_page.snack_bar.open = True
-            
         except Exception as ex:
-            print(f"[Draft 錯誤] Outlook 操作失敗: {ex}")
+            print(f"[Draft 錯誤] {ex}")
             self.main_page.snack_bar = ft.SnackBar(ft.Text(f"草稿建立失敗: {str(ex)}"))
             self.main_page.snack_bar.open = True
-            
         self.main_page.update()
 
 # --- 主程式 ---
@@ -497,7 +513,6 @@ def main(page: ft.Page):
     def on_nav_change(e):
         index = e.control.selected_index
         content_area.content = None
-        # 先切換內容區域，再執行載入動作以避免掛載錯誤
         if index == 0:
             content_area.content = supplier_manager
             supplier_manager.load_data()           
@@ -524,9 +539,7 @@ def main(page: ft.Page):
 
     page.add(ft.Row([rail, ft.VerticalDivider(width=1), content_area], expand=True))
     
-    # 啟動時預設讀取供應商資料
     supplier_manager.load_data()
 
 if __name__ == "__main__":
-    # 使用新版 ft.app(main) 啟動程式
-    ft.app(main)
+    ft.run(main)
