@@ -312,9 +312,8 @@ class RFQAnalyzer(ft.Column):
             self.results_container
         ]
 
-# 找到 RFQAnalyzer 類別中的 run_analysis 函數並替換
-    def run_analysis(self, e):
-        print("\n[UI 階段 1] 點擊解析按鈕")
+def run_analysis(self, e):
+        # 修正：改用 Button 符合新版 Flet 規範
         self.analyze_btn.disabled = True
         self.analyze_btn.text = "解析中..."
         self.main_page.update()
@@ -322,36 +321,59 @@ class RFQAnalyzer(ft.Column):
         try:
             text = self.input_text.value
             if not text:
-                print("[UI 警告] 輸入框是空的")
                 self.reset_btn()
                 return
 
-            # 呼叫 AI
             analysis_result = analyzer.analyze_rfq(text)
             self.analyzed_items = analysis_result.get("items", [])
             
-            if not self.analyzed_items:
-                print("[UI 階段 2] AI 未能解析出任何有效項目")
-            
+            # 存檔至資料庫
+            req_id = database.save_rfq_request(text, json.dumps(self.analyzed_items))
+
             self.results_container.controls = []
 
             for item in self.analyzed_items:
+                # 這裡對齊 analyzer.py 清理後的欄位
                 mat_type = item.get("material_type", "Other")
                 form_type = item.get("form", "Other")
-                print(f"[UI 階段 3] 正在為項目 {mat_type}-{form_type} 搜尋供應商...")
-
-                # 搜尋 DB
-                matched_suppliers = database.search_suppliers([mat_type], [form_type])
-                print(f"[UI 階段 4] 資料庫搜尋結果: 找到 {len(matched_suppliers)} 家匹配廠商")
-
-                # (後續建立 Card 的邏輯保持不變...)
-                # ...
+                spec = item.get("spec", {})
                 
-            self.main_page.update()
-            print("[UI 階段 5] 介面更新完成")
+                print(f"[UI 追蹤] 正在搜尋: {mat_type} / {form_type}")
+
+                # 搜尋供應商
+                matched_suppliers = database.search_suppliers([mat_type], [form_type])
+                
+                # UI 卡片建立 (改用 Button)
+                supplier_options = [ft.dropdown.Option(str(s[0]), f"{s[1]} ({s[2]})") for s in matched_suppliers]
+                supplier_dropdown = ft.Dropdown(label="選擇供應商", options=supplier_options, width=300)
+
+                draft_btn = ft.Button( # 修正：ElevatedButton -> Button
+                    "生成草稿",
+                    icon=ft.Icons.EMAIL,
+                    on_click=lambda e, sp=supplier_dropdown, it=item: self.generate_draft(sp, it)
+                )
+
+                card = ft.Card(
+                    content=ft.Container(
+                        padding=10,
+                        content=ft.Column([
+                            ft.ListTile(
+                                leading=ft.Icon(ft.Icons.CIRCLE, color=ft.colors.GREEN if item.get("confidence", 0) > 0.6 else ft.colors.RED),
+                                title=ft.Text(f"{mat_type} - {form_type}"),
+                                subtitle=ft.Text(f"規格: {spec}"),
+                            ),
+                            ft.Row([supplier_dropdown, draft_btn], alignment=ft.MainAxisAlignment.END)
+                        ])
+                    )
+                )
+                self.results_container.controls.append(card)
+
+            if not self.analyzed_items:
+                 self.main_page.snack_bar = ft.SnackBar(ft.Text("未能解析出項目"))
+                 self.main_page.snack_bar.open = True
 
         except Exception as ex:
-            print(f"[UI 錯誤] 流程崩潰: {ex}")
+            print(f"[UI 錯誤] {ex}")
             self.main_page.snack_bar = ft.SnackBar(ft.Text(f"發生錯誤: {str(ex)}"))
             self.main_page.snack_bar.open = True
         finally:
