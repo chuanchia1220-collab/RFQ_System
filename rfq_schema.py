@@ -32,7 +32,6 @@ RFQ_SCHEMA = {
               "Nickel Alloy",
               "Titanium Alloy",
               "Plastic",
-              "qualification": { "type": "string", "enum": ["ISO", "Automotive", "Aerospace"] },
               "Other"
             ]
           },
@@ -67,6 +66,7 @@ RFQ_SCHEMA = {
             # [a-zA-Z]+$: 結尾必須是英文單位
             "pattern": "^[0-9.,]+\\s*[a-zA-Z]+$"
           },
+          "qualification": { "type": "string", "enum": ["ISO", "Automotive", "Aerospace"] },
           "notes": {
             "type": "string",
             "description": "Inference logic, assumptions, or raw constraints."
