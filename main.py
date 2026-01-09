@@ -27,6 +27,7 @@ class SupplierManager(ft.Column):
         self.suppliers = []
         self.editing_id = None
         
+        # 1. 初始化輸入欄位
         self.input_name = ft.TextField(label=self.t["name"])
         self.input_contact = ft.TextField(label=self.t["contact"])
         self.input_email = ft.TextField(label=self.t["email"])
@@ -36,6 +37,7 @@ class SupplierManager(ft.Column):
         self.check_forms = self._create_checkbox_group(OPTIONS["form_types"])
         self.check_qualifications = self._create_checkbox_group(OPTIONS["qualifications"])
 
+        # 2. 建立對話框 (移除 text= 參數以相容 Flet 0.80.1)
         self.dialog = ft.AlertDialog(
             title=ft.Text(self.t["add_supplier"]),
             content=ft.Container(
@@ -55,6 +57,7 @@ class SupplierManager(ft.Column):
         )
         self.main_page.overlay.append(self.dialog)
 
+        # 3. UI 佈局
         self.data_table = ft.DataTable(
             columns=[ft.DataColumn(ft.Text(self.t[k])) for k in ["name", "contact", "phone", "materials", "forms", "qualifications", "actions"]],
             rows=[]
@@ -312,8 +315,8 @@ class RFQAnalyzer(ft.Column):
             self.results_container
         ]
 
-def run_analysis(self, e):
-        # 修正：改用 Button 符合新版 Flet 規範
+    def run_analysis(self, e):
+        print("\n[UI 階段 1] 點擊解析按鈕")
         self.analyze_btn.disabled = True
         self.analyze_btn.text = "解析中..."
         self.main_page.update()
@@ -326,28 +329,31 @@ def run_analysis(self, e):
 
             analysis_result = analyzer.analyze_rfq(text)
             self.analyzed_items = analysis_result.get("items", [])
-            
-            # 存檔至資料庫
             req_id = database.save_rfq_request(text, json.dumps(self.analyzed_items))
 
             self.results_container.controls = []
 
             for item in self.analyzed_items:
-                # 這裡對齊 analyzer.py 清理後的欄位
+                # 取得 AI 解析結果 (校正後應包含 material_type 與 form)
                 mat_type = item.get("material_type", "Other")
                 form_type = item.get("form", "Other")
                 spec = item.get("spec", {})
-                
-                print(f"[UI 追蹤] 正在搜尋: {mat_type} / {form_type}")
+                dims = spec.get("dimensions", {}) if isinstance(spec, dict) else {}
 
-                # 搜尋供應商
+                print(f"[UI 階段 3] 正在為項目 {mat_type}-{form_type} 搜尋供應商...")
                 matched_suppliers = database.search_suppliers([mat_type], [form_type])
+                print(f"[UI 階段 4] 找到 {len(matched_suppliers)} 家匹配廠商")
                 
-                # UI 卡片建立 (改用 Button)
+                matched_ids = [s[0] for s in matched_suppliers]
+                database.save_rfq_item(req_id, item.get("item_index"), mat_type, form_type, json.dumps(spec), matched_ids)
+
                 supplier_options = [ft.dropdown.Option(str(s[0]), f"{s[1]} ({s[2]})") for s in matched_suppliers]
                 supplier_dropdown = ft.Dropdown(label="選擇供應商", options=supplier_options, width=300)
+                
+                qty_text = f"Qty: {spec.get('annual_qty', '')} {spec.get('unit', '')}" if isinstance(spec, dict) else ""
+                spec_text = f"Dims: {dims} | {qty_text}"
 
-                draft_btn = ft.Button( # 修正：ElevatedButton -> Button
+                draft_btn = ft.ElevatedButton(
                     "生成草稿",
                     icon=ft.Icons.EMAIL,
                     on_click=lambda e, sp=supplier_dropdown, it=item: self.generate_draft(sp, it)
@@ -360,7 +366,7 @@ def run_analysis(self, e):
                             ft.ListTile(
                                 leading=ft.Icon(ft.Icons.CIRCLE, color=ft.colors.GREEN if item.get("confidence", 0) > 0.6 else ft.colors.RED),
                                 title=ft.Text(f"{mat_type} - {form_type}"),
-                                subtitle=ft.Text(f"規格: {spec}"),
+                                subtitle=ft.Text(spec_text),
                             ),
                             ft.Row([supplier_dropdown, draft_btn], alignment=ft.MainAxisAlignment.END)
                         ])
@@ -372,8 +378,10 @@ def run_analysis(self, e):
                  self.main_page.snack_bar = ft.SnackBar(ft.Text("未能解析出項目"))
                  self.main_page.snack_bar.open = True
 
+            print("[UI 階段 5] 介面更新完成")
+
         except Exception as ex:
-            print(f"[UI 錯誤] {ex}")
+            print(f"[UI 錯誤] 流程崩潰: {ex}")
             self.main_page.snack_bar = ft.SnackBar(ft.Text(f"發生錯誤: {str(ex)}"))
             self.main_page.snack_bar.open = True
         finally:
@@ -431,19 +439,22 @@ def main(page: ft.Page):
     supplier_manager = SupplierManager(page, current_lang)
     rfq_analyzer = RFQAnalyzer(page, current_lang)
     template_manager = TemplateManager(page)
+    
+    # 初始化顯示
     content_area = ft.Container(content=supplier_manager, expand=True, padding=20)
 
     def on_nav_change(e):
         index = e.control.selected_index
         content_area.content = None
+        # 修正掛載順序：必須先將元件賦值給 content_area，再執行 load_data
         if index == 0:
-            content_area.content = supplier_manager # 先加入頁面
-            supplier_manager.load_data()           # 後讀取資料
+            content_area.content = supplier_manager
+            supplier_manager.load_data()           
         elif index == 1:
             content_area.content = rfq_analyzer
         elif index == 2:
-            content_area.content = template_manager # 先加入頁面
-            template_manager.load_data()            # 後讀取資料
+            content_area.content = template_manager
+            template_manager.load_data()            
         page.update()
 
     rail = ft.NavigationRail(
@@ -459,7 +470,10 @@ def main(page: ft.Page):
         ],
         on_change=on_nav_change,
     )
+
     page.add(ft.Row([rail, ft.VerticalDivider(width=1), content_area], expand=True))
+    
+    # 啟動時讀取資料
     supplier_manager.load_data()
 
 if __name__ == "__main__":
