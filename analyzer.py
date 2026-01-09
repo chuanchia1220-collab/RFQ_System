@@ -1,49 +1,83 @@
-def generate_draft(self, supplier_dropdown, item):
-        print("\n[Draft] 按鈕被點擊，開始生成流程...")
-        supplier_id = supplier_dropdown.value
-        if not supplier_id:
-            self.main_page.snack_bar = ft.SnackBar(ft.Text("請先選擇供應商"))
-            self.main_page.snack_bar.open = True
-            self.main_page.update()
-            return
-        
-        suppliers = database.get_suppliers()
-        supplier = next((s for s in suppliers if str(s[0]) == str(supplier_id)), None)
-        templates = database.get_templates()
-        template = templates[0] if templates else (0, "Default", "Inquiry {date}", "<p>Hi,</p>", "<p>Thanks</p>")
+import os
+import json
+import openai
+from config import OPTIONS
 
-        from datetime import datetime
-        subject = template[2].format(date=datetime.now().strftime("%Y%m%d")) + f"_{supplier[1]}"
+def analyze_rfq(text):
+    print(f"\n[AI] 收到解析請求，長度: {len(text)}")
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        print("[AI 錯誤] 找不到 OPENAI_API_KEY")
+        return {"items": []}
+
+    client = openai.OpenAI(api_key=api_key)
+    material_opts = ", ".join(OPTIONS["material_types"])
+    form_opts = ", ".join(OPTIONS["form_types"])
+
+    system_prompt = "You are an expert procurement assistant. You MUST return valid JSON."
+    
+    # 【關鍵修正】寫入你的 10mm 黃金法則 + Block 歸類
+    user_prompt = (
+        f"Analyze this RFQ text:\n{text}\n\n"
+        f"Valid materials: {material_opts}\n"
+        f"Valid forms: {form_opts}\n\n"
+        f"*** CRITICAL RULES ***\n"
+        f"1. **Thickness Logic**: Identify dimensions. Find the SMALLEST dimension as 'Thickness'.\n"
+        f"   - If Thickness >= 10mm, set form to 'Plate'.\n"
+        f"   - If Thickness < 10mm, set form to 'Sheet'.\n"
+        f"2. **Block Rule**: If item is 'Block' or 'Cuboid' (3D), treat it as 'Plate'.\n"
+        f"3. **Material**: '316L' is 'Stainless Steel'.\n"
+        f"4. **Format**: Return ONLY a JSON object with a root key 'items'. NO markdown, NO comments.\n"
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+            temperature=0
+        )
+        content = response.choices[0].message.content.strip()
         
-        try:
-            # 檢查作業系統
-            if os.name == 'nt':
-                print("[Draft] 偵測到 Windows 環境，嘗試載入 win32com...")
-                import win32com.client
-                outlook = win32com.client.Dispatch('Outlook.Application')
-                print("[Draft] Outlook 應用程式物件建立成功")
-                
-                mail = outlook.CreateItem(0)
-                mail.Subject = subject
-                mail.HTMLBody = f"{template[3]}<br>Item: {item['material_type']} {item['form']}<br>Spec: {item['spec']}<br>{template[4]}"
-                mail.To = supplier[3]
-                mail.Save()
-                
-                print("[Draft] 草稿儲存指令已發送")
-                msg = "Outlook 草稿已建立，請檢查草稿匣 (Drafts)"
-            else:
-                msg = f"非 Windows 環境: 已模擬建立草稿給 {supplier[1]}"
+        # 【除錯關鍵】印出 AI 到底回傳了什麼
+        print(f"[AI Debug] 原始回傳內容: >>>{content}<<<")
+
+        if not content:
+            print("[AI 錯誤] AI 回傳了空字串，可能是 API 額度不足或被限制。")
+            return {"items": []}
+
+        # 清理 Markdown
+        if "```json" in content: content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content: content = content.split("```")[1].split("```")[0].strip()
+
+        raw_data = json.loads(content)
+        
+        # 容錯抓取 items
+        items = []
+        for key in ["items", "RFQ_items", "rfq_items", "Items"]:
+            if key in raw_data:
+                items = raw_data[key]
+                break
+        
+        final_items = []
+        for raw_item in items:
+            # 確保 AI 判斷的 Form 有被保留 (這裡會是 Plate 或 Sheet)
+            ai_form = raw_item.get("form", raw_item.get("form_type", "Other"))
             
-            self.main_page.snack_bar = ft.SnackBar(ft.Text(msg))
-            self.main_page.snack_bar.open = True
-            
-        except ImportError:
-            print("[Draft 錯誤] 找不到 pywin32 模組，請執行 pip install pywin32")
-            self.main_page.snack_bar = ft.SnackBar(ft.Text("錯誤：請安裝 Outlook 驅動 (pip install pywin32)"))
-            self.main_page.snack_bar.open = True
-        except Exception as ex:
-            print(f"[Draft 錯誤] Outlook 操作失敗: {ex}")
-            self.main_page.snack_bar = ft.SnackBar(ft.Text(f"草稿建立失敗: {str(ex)}"))
-            self.main_page.snack_bar.open = True
-            
-        self.main_page.update()
+            cleaned = {
+                "item_index": raw_item.get("item_index", 0),
+                "confidence": raw_item.get("confidence", 0.9),
+                "spec": raw_item.get("spec", raw_item),
+                "material_type": raw_item.get("material_type", "Other"),
+                "form": ai_form 
+            }
+            final_items.append(cleaned)
+
+        print(f"[AI] 解析成功，取得 {len(final_items)} 筆資料")
+        return {"items": final_items}
+
+    except json.JSONDecodeError as e:
+        print(f"[AI 錯誤] JSON 解析失敗: {e}")
+        return {"items": []}
+    except Exception as e:
+        print(f"[AI 錯誤] {e}")
+        return {"items": []}
