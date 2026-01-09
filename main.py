@@ -458,4 +458,4 @@ def main(page: ft.Page):
     supplier_manager.load_data()
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.app(main)
