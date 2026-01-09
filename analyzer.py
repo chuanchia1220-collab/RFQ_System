@@ -41,10 +41,10 @@ def analyze_rfq(text):
         f"   - {context_hint}\n"
         f"   - If unsure, use 'Other' and explain in notes.\n"
         f"6. **DIMENSIONS**: Keep original string format exactly.\n"
-        f"7. **NOTES (CRITICAL)**: Extract additional specs, constraints, or descriptions **VERBATIM** (word-for-word) from the source. \n"
-        f"   - **DO NOT TRANSLATE**. \n"
-        f"   - If the text is in Chinese, keep it in Chinese. \n"
-        f"   - If mixed, keep mixed (e.g. 'corrosion resistant steel type 316L(耐腐蝕316L)(非航太件)').\n"
+        f"7. **NOTES**: Extract technical specs or constraints.\n"
+        f"   - **PRESERVE KEYWORDS**: Keep material names, grades (e.g. 316L), and technical terms in their **ORIGINAL** language. \n"
+        f"   - **DO NOT TRANSLATE** technical terms. Do not auto-correct them.\n"
+        f"   - You may lightly format the text for readability, but do not alter the meaning or remove key details.\n"
     )
 
     messages = [
