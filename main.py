@@ -16,7 +16,7 @@ def from_json_str(json_str):
     except:
         return []
 
-# --- 供應商管理組件 ---
+# --- 供應商管理組件 (保持不變) ---
 class SupplierManager(ft.Column):
     def __init__(self, page: ft.Page, lang="zh"):
         super().__init__(expand=True)
@@ -28,7 +28,6 @@ class SupplierManager(ft.Column):
         self.suppliers = []
         self.editing_id = None
         
-        # 1. 初始化輸入欄位
         self.input_name = ft.TextField(label=self.t["name"])
         self.input_contact = ft.TextField(label=self.t["contact"])
         self.input_email = ft.TextField(label=self.t["email"])
@@ -38,7 +37,6 @@ class SupplierManager(ft.Column):
         self.check_forms = self._create_checkbox_group(OPTIONS["form_types"])
         self.check_qualifications = self._create_checkbox_group(OPTIONS["qualifications"])
 
-        # 2. 建立對話框
         self.dialog = ft.AlertDialog(
             title=ft.Text(self.t["add_supplier"]),
             content=ft.Container(
@@ -58,7 +56,6 @@ class SupplierManager(ft.Column):
         )
         self.main_page.overlay.append(self.dialog)
 
-        # 3. UI 佈局
         self.data_table = ft.DataTable(
             columns=[ft.DataColumn(ft.Text(self.t[k])) for k in ["name", "contact", "phone", "materials", "forms", "qualifications", "actions"]],
             rows=[]
@@ -174,7 +171,7 @@ class SupplierManager(ft.Column):
         database.delete_supplier(s_id)
         self.load_data()
 
-# --- 樣板管理組件 ---
+# --- 樣板管理組件 (保持不變) ---
 class TemplateManager(ft.Column):
     def __init__(self, page: ft.Page):
         super().__init__(expand=True)
@@ -312,7 +309,7 @@ class RFQAnalyzer(ft.Column):
             ft.Row([self.input_text], expand=False),
             ft.Row([self.analyze_btn], alignment=ft.MainAxisAlignment.END),
             ft.Divider(),
-            ft.Text("解析結果與匹配", size=20, weight=ft.FontWeight.BOLD),
+            ft.Text("解析結果與匹配 (材質分組)", size=20, weight=ft.FontWeight.BOLD),
             self.results_container
         ]
 
@@ -323,62 +320,104 @@ class RFQAnalyzer(ft.Column):
         self.main_page.update()
 
         try:
-            # 呼叫升級後的分析器
+            # 1. 呼叫 AI 解析
             analysis_result = analyzer.analyze_rfq(self.input_text.value)
-            self.analyzed_items = analysis_result.get("items", [])
+            all_items = analysis_result.get("items", [])
             
             # 儲存請求紀錄
-            req_id = database.save_rfq_request(self.input_text.value, json.dumps(self.analyzed_items))
+            req_id = database.save_rfq_request(self.input_text.value, json.dumps(all_items))
 
             self.results_container.controls = []
 
-            for index, item in enumerate(self.analyzed_items):
-                # 對齊新版資料結構
-                mat = item.get("material_type", "Other")
-                spec = item.get("material_spec", "-")
-                frm = item.get("form", "Other")
-                dims = item.get("dimensions", "-")
-                qty = item.get("quantity", "-")
-                notes = item.get("notes", "-")
+            # 2. 進行材質分組 (Grouping)
+            # 結構: grouped_items = { "Stainless Steel": [item1, item2], "Aluminum": [item3] }
+            grouped_items = {}
+            for item in all_items:
+                mat_type = item.get("material_type", "Other")
+                if mat_type not in grouped_items:
+                    grouped_items[mat_type] = []
+                grouped_items[mat_type].append(item)
 
-                print(f"[UI 階段 3] 項目 {index+1}: {mat}-{frm} 搜尋供應商...")
-                matched_suppliers = database.search_suppliers([mat], [frm])
+            if not grouped_items:
+                 self.main_page.snack_bar = ft.SnackBar(ft.Text("未能解析出項目，請檢查 API Key 或輸入內容"))
+                 self.main_page.snack_bar.open = True
+                 return
+
+            # 3. 針對每一組材質生成 UI 卡片
+            for mat_type, group_items_list in grouped_items.items():
+                print(f"[UI 階段 3] 正在處理分組: {mat_type}, 共 {len(group_items_list)} 個項目")
                 
-                # 儲存單項結果
-                matched_ids = [s[0] for s in matched_suppliers]
-                database.save_rfq_item(req_id, index, mat, frm, json.dumps(item), matched_ids)
-
-                # 下拉選單建立
+                # 搜尋供應商 (以該材質為準)
+                # 注意：這裡搜尋的是只要有支援該材質的供應商即可
+                matched_suppliers = database.search_suppliers([mat_type], [])
                 supplier_options = [ft.dropdown.Option(str(s[0]), f"{s[1]} ({s[2]})") for s in matched_suppliers]
-                supplier_dropdown = ft.Dropdown(label="選擇供應商", options=supplier_options, width=300)
+                
+                # 建立顯示表格 (DataTable)
+                data_rows = []
+                for idx, item in enumerate(group_items_list):
+                    # 儲存單項結果到 DB (保留個別紀錄)
+                    matched_ids = [s[0] for s in matched_suppliers]
+                    database.save_rfq_item(req_id, idx, mat_type, item.get("form", "Other"), json.dumps(item), matched_ids)
+                    
+                    # 建立表格列
+                    data_rows.append(
+                        ft.DataRow(cells=[
+                            ft.DataCell(ft.Text(str(idx + 1))),
+                            ft.DataCell(ft.Text(item.get("material_spec", "-"))),
+                            ft.DataCell(ft.Text(item.get("form", "-"))),
+                            ft.DataCell(ft.Text(item.get("dimensions", "-"))),
+                            ft.DataCell(ft.Text(item.get("quantity", "-"))),
+                            ft.DataCell(ft.Text(item.get("notes", "-"))),
+                        ])
+                    )
 
-                # 建立卡片元件
+                items_table = ft.DataTable(
+                    columns=[
+                        ft.DataColumn(ft.Text("#")),
+                        ft.DataColumn(ft.Text("Spec")),
+                        ft.DataColumn(ft.Text("Form")),
+                        ft.DataColumn(ft.Text("Dimensions")),
+                        ft.DataColumn(ft.Text("Qty")),
+                        ft.DataColumn(ft.Text("Notes")),
+                    ],
+                    rows=data_rows,
+                    border=ft.border.all(1, ft.Colors.GREY_300),
+                    vertical_lines=ft.border.all(1, ft.Colors.GREY_200),
+                    horizontal_lines=ft.border.all(1, ft.Colors.GREY_200),
+                )
+
+                # 建立 3 個供應商下拉選單
+                supp_dd1 = ft.Dropdown(label="供應商 1", options=supplier_options, width=250)
+                supp_dd2 = ft.Dropdown(label="供應商 2", options=supplier_options, width=250)
+                supp_dd3 = ft.Dropdown(label="供應商 3", options=supplier_options, width=250)
+
+                # 建立整組的生成按鈕
+                # 注意：lambda 必須正確傳遞當前的 group_items_list 和這三個 dropdown
+                batch_draft_btn = ft.Button(
+                    "生成草稿 (批次)",
+                    icon=ft.Icons.EMAIL,
+                    on_click=lambda e, items=group_items_list, dds=[supp_dd1, supp_dd2, supp_dd3]: self.generate_batch_drafts(items, dds)
+                )
+
+                # 組合卡片
                 card = ft.Card(
                     content=ft.Container(
-                        padding=15,
+                        padding=20,
                         content=ft.Column([
-                            ft.ListTile(
-                                leading=ft.Icon(ft.Icons.PRECISION_MANUFACTURING),
-                                title=ft.Text(f"{mat} {frm} | {spec}"),
-                                subtitle=ft.Text(f"尺寸: {dims} | 數量: {qty}"),
-                            ),
-                            ft.Text(f"備註/推論: {notes}", size=12, italic=True, color=ft.Colors.GREY_700),
                             ft.Row([
-                                supplier_dropdown, 
-                                ft.Button(
-                                    "生成草稿", 
-                                    icon=ft.Icons.EMAIL,
-                                    on_click=lambda e, sp=supplier_dropdown, it=item: self.generate_draft(sp, it)
-                                )
-                            ], alignment=ft.MainAxisAlignment.END)
+                                ft.Icon(ft.Icons.CATEGORY, color=ft.Colors.BLUE),
+                                ft.Text(f"材質群組: {mat_type}", size=20, weight=ft.FontWeight.BOLD)
+                            ]),
+                            ft.Divider(),
+                            items_table,
+                            ft.Divider(),
+                            ft.Text("選擇詢價對象 (最多 3 家):", weight=ft.FontWeight.BOLD),
+                            ft.Row([supp_dd1, supp_dd2, supp_dd3], wrap=True),
+                            ft.Row([batch_draft_btn], alignment=ft.MainAxisAlignment.END)
                         ])
                     )
                 )
                 self.results_container.controls.append(card)
-
-            if not self.analyzed_items:
-                 self.main_page.snack_bar = ft.SnackBar(ft.Text("未能解析出項目，請檢查 API Key 或輸入內容"))
-                 self.main_page.snack_bar.open = True
 
             print("[UI 階段 5] 介面更新完成")
 
@@ -394,29 +433,45 @@ class RFQAnalyzer(ft.Column):
         self.analyze_btn.disabled = False
         self.analyze_btn.text = "開始解析"
 
-    # --- 關鍵修正：確保此方法位於類別內部並實施表格化邏輯 ---
-    def generate_draft(self, supplier_dropdown, item):
-        print("\n[Draft] 生成表格化草稿...")
-        supplier_id = supplier_dropdown.value
-        if not supplier_id:
-            self.main_page.snack_bar = ft.SnackBar(ft.Text("請先選擇供應商"))
+    # --- 新增：批次草稿生成邏輯 ---
+    def generate_batch_drafts(self, items_list, dropdowns):
+        print("\n[Draft] 開始批次生成草稿...")
+        
+        # 1. 收集被選中的供應商 ID (排除空值)
+        selected_ids = [dd.value for dd in dropdowns if dd.value]
+        
+        if not selected_ids:
+            self.main_page.snack_bar = ft.SnackBar(ft.Text("請至少選擇 1 家供應商"))
             self.main_page.snack_bar.open = True
             self.main_page.update()
             return
         
-        suppliers = database.get_suppliers()
-        supplier = next((s for s in suppliers if str(s[0]) == str(supplier_id)), None)
+        # 去除重複 (如果使用者選了兩次同一家)
+        selected_ids = list(set(selected_ids))
+        
+        suppliers_db = database.get_suppliers()
         templates = database.get_templates()
         template = templates[0] if templates else (0, "Default", "Inquiry {date}", "<p>Hi,</p>", "<p>Thanks</p>")
-
-        subject = template[2].format(date=datetime.now().strftime("%Y%m%d")) + f"_{supplier[1]}"
         
-        # 建立 HTML 表格 (對應架構師要求：一筆料一個數量 = 一行)
+        # 2. 建立 HTML 表格內容 (這份表格對所有供應商都一樣)
         table_style = "border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 13px;"
         th_style = "border: 1px solid #333; padding: 10px; background-color: #eee; text-align: left;"
         td_style = "border: 1px solid #333; padding: 10px;"
         
-        table_html = f"""
+        table_rows_html = ""
+        for item in items_list:
+            table_rows_html += f"""
+            <tr>
+                <td style='{td_style}'>{item.get('material_type', '-')}</td>
+                <td style='{td_style}'>{item.get('material_spec', '-')}</td>
+                <td style='{td_style}'>{item.get('form', '-')}</td>
+                <td style='{td_style}'>{item.get('dimensions', '-')}</td>
+                <td style='{td_style}'>{item.get('quantity', '-')}</td>
+                <td style='{td_style}'>{item.get('notes', '-')}</td>
+            </tr>
+            """
+        
+        full_table_html = f"""
         <table style='{table_style}'>
             <thead>
                 <tr>
@@ -429,30 +484,36 @@ class RFQAnalyzer(ft.Column):
                 </tr>
             </thead>
             <tbody>
-                <tr>
-                    <td style='{td_style}'>{item.get('material_type', '-')}</td>
-                    <td style='{td_style}'>{item.get('material_spec', '-')}</td>
-                    <td style='{td_style}'>{item.get('form', '-')}</td>
-                    <td style='{td_style}'>{item.get('dimensions', '-')}</td>
-                    <td style='{td_style}'>{item.get('quantity', '-')}</td>
-                    <td style='{td_style}'>{item.get('notes', '-')}</td>
-                </tr>
+                {table_rows_html}
             </tbody>
-        </table>"""
+        </table>
+        """
 
+        # 3. 迴圈生成郵件
+        success_count = 0
         try:
             if os.name == 'nt':
                 import win32com.client
                 outlook = win32com.client.Dispatch('Outlook.Application')
-                mail = outlook.CreateItem(0)
-                mail.Subject = subject
-                # 組合最終 Email：Preamble + Table + Closing
-                mail.HTMLBody = f"<div>{template[3]}</div><br>{table_html}<br><div>{template[4]}</div>"
-                mail.To = supplier[3]
-                mail.Save()
-                msg = "Outlook 表格化草稿已建立 (請檢查草稿匣)"
+                
+                for supp_id in selected_ids:
+                    # 找到供應商資料
+                    supplier = next((s for s in suppliers_db if str(s[0]) == str(supp_id)), None)
+                    if not supplier: continue
+                    
+                    subject = template[2].format(date=datetime.now().strftime("%Y%m%d")) + f"_{supplier[1]}"
+                    
+                    mail = outlook.CreateItem(0)
+                    mail.Subject = subject
+                    mail.HTMLBody = f"<div>{template[3]}</div><br>{full_table_html}<br><div>{template[4]}</div>"
+                    mail.To = supplier[3]
+                    mail.Save()
+                    success_count += 1
+                    print(f"[Draft] 已建立草稿給: {supplier[1]}")
+                
+                msg = f"成功建立 {success_count} 封草稿 (請至 Outlook 草稿匣查看)"
             else:
-                msg = "非 Windows 環境，僅模擬生成成功"
+                msg = f"非 Windows 環境: 模擬建立 {len(selected_ids)} 封草稿"
             
             self.main_page.snack_bar = ft.SnackBar(ft.Text(msg))
             self.main_page.snack_bar.open = True
@@ -467,7 +528,7 @@ class RFQAnalyzer(ft.Column):
 # --- 主程式 ---
 def main(page: ft.Page):
     database.init_db()
-    page.title = "RFQ System v1.1"
+    page.title = "RFQ System v1.2 (Batch)"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.window_width, page.window_height = 1200, 800
 
@@ -509,9 +570,7 @@ def main(page: ft.Page):
 
     page.add(ft.Row([rail, ft.VerticalDivider(width=1), content_area], expand=True))
     
-    # 啟動時預設載入供應商
     supplier_manager.load_data()
 
 if __name__ == "__main__":
-    # 使用新版 ft.app(main) 啟動程式
     ft.app(main)
