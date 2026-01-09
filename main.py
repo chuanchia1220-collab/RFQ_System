@@ -302,8 +302,8 @@ class RFQAnalyzer(ft.Column):
         # 修改: 橫向滿版 (width=float("inf"))
         self.input_text = ft.TextField(
             multiline=True, 
-            min_lines=20,     
-            text_size=14,     
+            min_lines=12,     
+            text_size=15,     
             label="貼上詢價 Email 內容",
             width=float("inf") # 強制水平滿版
         )
