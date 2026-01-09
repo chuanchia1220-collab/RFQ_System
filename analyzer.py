@@ -1,68 +1,49 @@
-import os
-import json
-import openai
-from config import OPTIONS
-
-def analyze_rfq(text):
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        print("[錯誤] 找不到 OPENAI_API_KEY")
-        return {"items": []}
-
-    client = openai.OpenAI(api_key=api_key)
-    material_opts = ", ".join(OPTIONS["material_types"])
-    form_opts = ", ".join(OPTIONS["form_types"])
-
-    system_prompt = "You are an expert procurement assistant."
-    
-    # 【關鍵修正】: 加入板材厚度判斷與 Block 歸類邏輯
-    user_prompt = (
-        f"Analyze this RFQ text:\n{text}\n\n"
-        f"Valid materials: {material_opts}\n"
-        f"Valid forms: {form_opts}\n\n"
-        f"Logic Rules:\n"
-        f"1. **Block/Plate Rule**: If the item is described as 'Block', classify as 'Plate'.\n"
-        f"2. **Thickness Rule**: For flat items (Plate/Sheet/Strip/Block) or items with 3 dimensions:\n"
-        f"   - Identifty the smallest dimension as 'Thickness'.\n"
-        f"   - If Thickness < 10mm, classify as 'Sheet'.\n"
-        f"   - If Thickness >= 10mm, classify as 'Plate'.\n"
-        f"3. **Bar Rule**: Only classify as 'Bar' if it is explicitly 'Bar', 'Rod', or long/cylindrical items not matching the Plate rule.\n"
-        f"4. Return ONLY a JSON object with a root key 'items'.\n"
-        f"5. Each item must have 'material_type' and 'form' strictly from the valid lists."
-    )
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-            temperature=0
-        )
-        content = response.choices[0].message.content.strip()
-        if "```json" in content: content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content: content = content.split("```")[1].split("```")[0].strip()
-
-        raw_data = json.loads(content)
+def generate_draft(self, supplier_dropdown, item):
+        print("\n[Draft] 按鈕被點擊，開始生成流程...")
+        supplier_id = supplier_dropdown.value
+        if not supplier_id:
+            self.main_page.snack_bar = ft.SnackBar(ft.Text("請先選擇供應商"))
+            self.main_page.snack_bar.open = True
+            self.main_page.update()
+            return
         
-        items = []
-        for key in ["items", "RFQ_items", "rfq_items", "Items"]:
-            if key in raw_data:
-                items = raw_data[key]
-                break
+        suppliers = database.get_suppliers()
+        supplier = next((s for s in suppliers if str(s[0]) == str(supplier_id)), None)
+        templates = database.get_templates()
+        template = templates[0] if templates else (0, "Default", "Inquiry {date}", "<p>Hi,</p>", "<p>Thanks</p>")
+
+        from datetime import datetime
+        subject = template[2].format(date=datetime.now().strftime("%Y%m%d")) + f"_{supplier[1]}"
         
-        final_items = []
-        for raw_item in items:
-            cleaned = {
-                "item_index": raw_item.get("item_index", 0),
-                "confidence": raw_item.get("confidence", 0.9),
-                "spec": raw_item.get("spec", raw_item),
-                "material_type": raw_item.get("material_type", raw_item.get("material", "Other")),
-                "form": raw_item.get("form", raw_item.get("form_type", "Other")) 
-            }
-            final_items.append(cleaned)
-
-        print(f"[AI 階段 4] 智慧判斷完成 (含厚度邏輯)，取得 {len(final_items)} 個項目")
-        return {"items": final_items}
-
-    except Exception as e:
-        print(f"[AI 錯誤] {e}")
-        return {"items": []}
+        try:
+            # 檢查作業系統
+            if os.name == 'nt':
+                print("[Draft] 偵測到 Windows 環境，嘗試載入 win32com...")
+                import win32com.client
+                outlook = win32com.client.Dispatch('Outlook.Application')
+                print("[Draft] Outlook 應用程式物件建立成功")
+                
+                mail = outlook.CreateItem(0)
+                mail.Subject = subject
+                mail.HTMLBody = f"{template[3]}<br>Item: {item['material_type']} {item['form']}<br>Spec: {item['spec']}<br>{template[4]}"
+                mail.To = supplier[3]
+                mail.Save()
+                
+                print("[Draft] 草稿儲存指令已發送")
+                msg = "Outlook 草稿已建立，請檢查草稿匣 (Drafts)"
+            else:
+                msg = f"非 Windows 環境: 已模擬建立草稿給 {supplier[1]}"
+            
+            self.main_page.snack_bar = ft.SnackBar(ft.Text(msg))
+            self.main_page.snack_bar.open = True
+            
+        except ImportError:
+            print("[Draft 錯誤] 找不到 pywin32 模組，請執行 pip install pywin32")
+            self.main_page.snack_bar = ft.SnackBar(ft.Text("錯誤：請安裝 Outlook 驅動 (pip install pywin32)"))
+            self.main_page.snack_bar.open = True
+        except Exception as ex:
+            print(f"[Draft 錯誤] Outlook 操作失敗: {ex}")
+            self.main_page.snack_bar = ft.SnackBar(ft.Text(f"草稿建立失敗: {str(ex)}"))
+            self.main_page.snack_bar.open = True
+            
+        self.main_page.update()
