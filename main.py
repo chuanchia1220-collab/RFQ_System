@@ -393,7 +393,8 @@ class RFQAnalyzer(ft.Column):
         self.analyze_btn.disabled = False
         self.analyze_btn.text = "開始解析"
 
-def generate_draft(self, supplier_dropdown, item):
+    # 修正：將 generate_draft 縮排至類別內部
+    def generate_draft(self, supplier_dropdown, item):
         print("\n[Draft] 按鈕被點擊，開始生成流程...")
         supplier_id = supplier_dropdown.value
         if not supplier_id:
