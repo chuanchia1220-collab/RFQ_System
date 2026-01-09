@@ -16,20 +16,17 @@ def from_json_str(json_str):
     except:
         return []
 
-# --- 供應商管理組件 (解決拉霸問題) ---
+# --- 供應商管理組件 ---
 class SupplierManager(ft.Column):
     def __init__(self, page: ft.Page, lang="zh"):
-        # 關鍵修正：加入 scroll=ft.ScrollMode.AUTO 以顯示拉霸
         super().__init__(expand=True, scroll=ft.ScrollMode.AUTO)
         self.main_page = page
         self.lang = lang
         self.t = TRANSLATIONS[lang]
         self.opt_trans = OPTION_TRANSLATIONS.get(lang, {})
-        
         self.suppliers = []
         self.editing_id = None
         
-        # 初始化輸入欄位
         self.input_name = ft.TextField(label=self.t["name"])
         self.input_contact = ft.TextField(label=self.t["contact"])
         self.input_email = ft.TextField(label=self.t["email"])
@@ -63,24 +60,16 @@ class SupplierManager(ft.Column):
             rows=[]
         )
         
-        self.add_btn = ft.Button(
-            self.t["add_supplier"],
-            icon=ft.Icons.ADD,
-            on_click=self.open_add_dialog
-        )
+        self.add_btn = ft.Button(self.t["add_supplier"], icon=ft.Icons.ADD, on_click=self.open_add_dialog)
         
         self.controls = [
             ft.Row([ft.Text(self.t["supplier_management"], size=30), self.add_btn], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             ft.Divider(),
-            # 確保水平與垂直都有捲動能力
             ft.Row([self.data_table], scroll=ft.ScrollMode.AUTO)
         ]
 
     def _create_checkbox_group(self, options):
-        return ft.Column([
-            ft.Checkbox(label=self.opt_trans.get(opt, opt), value=False, data=opt)
-            for opt in options
-        ])
+        return ft.Column([ft.Checkbox(label=self.opt_trans.get(opt, opt), value=False, data=opt) for opt in options])
 
     def _get_checked_values(self, checkbox_group):
         return [cb.data for cb in checkbox_group.controls if cb.value]
@@ -101,14 +90,9 @@ class SupplierManager(ft.Column):
         self.suppliers = database.get_suppliers()
         self.data_table.rows = []
         for s in self.suppliers:
-            s_id = s[0]
-            mats = from_json_str(s[6])
-            forms = from_json_str(s[7])
-            quals = from_json_str(s[8])
-            
-            mats_disp = ", ".join([self.opt_trans.get(m, m) for m in mats])
-            forms_disp = ", ".join([self.opt_trans.get(f, f) for f in forms])
-            quals_disp = ", ".join([self.opt_trans.get(q, q) for q in quals])
+            mats_disp = ", ".join([self.opt_trans.get(m, m) for m in from_json_str(s[6])])
+            forms_disp = ", ".join([self.opt_trans.get(f, f) for f in from_json_str(s[7])])
+            quals_disp = ", ".join([self.opt_trans.get(q, q) for q in from_json_str(s[8])])
 
             self.data_table.rows.append(
                 ft.DataRow(cells=[
@@ -119,15 +103,13 @@ class SupplierManager(ft.Column):
                     ft.DataCell(ft.Text(forms_disp)),
                     ft.DataCell(ft.Text(quals_disp)),
                     ft.DataCell(ft.Row([
-                        ft.IconButton(ft.Icons.EDIT, on_click=lambda e, sid=s_id: self.open_edit_dialog(sid)),
-                        ft.IconButton(ft.Icons.DELETE, on_click=lambda e, sid=s_id: self.delete_supplier(sid))
+                        ft.IconButton(ft.Icons.EDIT, on_click=lambda e, sid=s[0]: self.open_edit_dialog(sid)),
+                        ft.IconButton(ft.Icons.DELETE, on_click=lambda e, sid=s[0]: self.delete_supplier(sid))
                     ])),
                 ])
             )
-        try:
-            self.update()
-        except Exception:
-            pass
+        try: self.update()
+        except: pass
 
     def open_add_dialog(self, e):
         self._clear_inputs()
@@ -163,10 +145,8 @@ class SupplierManager(ft.Column):
             to_json_str(self._get_checked_values(self.check_forms)),
             to_json_str(self._get_checked_values(self.check_qualifications))
         )
-        if self.editing_id:
-            database.update_supplier(self.editing_id, *data)
-        else:
-            database.add_supplier(*data)
+        if self.editing_id: database.update_supplier(self.editing_id, *data)
+        else: database.add_supplier(*data)
         self.close_dialog(None)
         self.load_data()
 
@@ -174,14 +154,13 @@ class SupplierManager(ft.Column):
         database.delete_supplier(s_id)
         self.load_data()
 
-# --- 樣板管理組件 (同步開啟拉霸) ---
+# --- 樣板管理組件 ---
 class TemplateManager(ft.Column):
     def __init__(self, page: ft.Page):
         super().__init__(expand=True, scroll=ft.ScrollMode.AUTO)
         self.main_page = page
         self.templates = []
         self.editing_id = None
-
         self.input_name = ft.TextField(label="Template Name")
         self.chk_default_subject = ft.Checkbox(label="使用預設主旨 (格式: RFQYYMMDDHH_材質_供應商)", value=False, on_change=self.toggle_subject_input)
         self.input_subject = ft.TextField(label="Subject Format")
@@ -225,19 +204,15 @@ class TemplateManager(ft.Column):
         self.templates = database.get_templates()
         self.data_table.rows = []
         for t in self.templates:
-            t_id = t[0]
-            try:
-                use_default = t[12] if len(t) > 12 else 0
-            except:
-                use_default = 0
+            use_default = t[12] if len(t) > 12 else 0
             subject_display = "預設格式 (Auto)" if use_default else (t[2] or "")
             self.data_table.rows.append(
                 ft.DataRow(cells=[
                     ft.DataCell(ft.Text(t[1])),
                     ft.DataCell(ft.Text(subject_display)),
                     ft.DataCell(ft.Row([
-                        ft.IconButton(ft.Icons.EDIT, on_click=lambda e, tid=t_id: self.open_edit_dialog(tid)),
-                        ft.IconButton(ft.Icons.DELETE, on_click=lambda e, tid=t_id: self.delete_template(tid))
+                        ft.IconButton(ft.Icons.EDIT, on_click=lambda e, tid=t[0]: self.open_edit_dialog(tid)),
+                        ft.IconButton(ft.Icons.DELETE, on_click=lambda e, tid=t[0]: self.delete_template(tid))
                     ])),
                 ])
             )
@@ -265,11 +240,9 @@ class TemplateManager(ft.Column):
         self.input_subject.value = tmpl[2] or ""
         self.input_preamble.value = tmpl[3] or ""
         self.input_closing.value = tmpl[4] or ""
-        cc_val = tmpl[11] if len(tmpl) > 11 else ""
-        use_default_val = tmpl[12] if len(tmpl) > 12 else 0
-        self.input_cc.value = cc_val or ""
-        self.chk_default_subject.value = bool(use_default_val)
-        self.input_subject.disabled = bool(use_default_val)
+        self.input_cc.value = tmpl[11] if len(tmpl) > 11 else ""
+        self.chk_default_subject.value = bool(tmpl[12] if len(tmpl) > 12 else 0)
+        self.input_subject.disabled = self.chk_default_subject.value
         self.dialog.title.value = ft.Text("Edit Template")
         self.dialog.open = True
         self.main_page.update()
@@ -291,7 +264,7 @@ class TemplateManager(ft.Column):
         database.delete_template(t_id)
         self.load_data()
 
-# --- 詢價解析組件 (維持現狀並確保捲動) ---
+# --- 詢價解析組件 (恢復大卡片佈局 + 認證判斷) ---
 class RFQAnalyzer(ft.Column):
     def __init__(self, page: ft.Page, lang="zh"):
         super().__init__(expand=True, scroll=ft.ScrollMode.AUTO)
@@ -301,9 +274,9 @@ class RFQAnalyzer(ft.Column):
         self.opt_trans = OPTION_TRANSLATIONS.get(lang, {})
         self.analyzed_items = []
 
-        self.input_text = ft.TextField(multiline=True, min_lines=10, label="貼上詢價 Email 內容", expand=False)
+        self.input_text = ft.TextField(multiline=True, min_lines=10, label="貼上詢價 Email 內容")
         self.analyze_btn = ft.Button("開始解析", icon=ft.Icons.ANALYTICS, on_click=self.run_analysis)
-        self.results_container = ft.Column() # 這裡不需要另外設捲動，父元件 Column 會處理
+        self.results_container = ft.Column()
 
         self.controls = [
             ft.Text(self.t["rfq_analysis"], size=30),
@@ -324,35 +297,94 @@ class RFQAnalyzer(ft.Column):
             all_items = analysis_result.get("items", [])
             req_id = database.save_rfq_request(self.input_text.value, json.dumps(all_items))
             self.results_container.controls = []
+
+            # 依材質分組
             grouped_items = {}
             for item in all_items:
                 mat_type = item.get("material_type", "Other")
                 if mat_type not in grouped_items: grouped_items[mat_type] = []
                 grouped_items[mat_type].append(item)
+
             if not grouped_items:
                  self.main_page.snack_bar = ft.SnackBar(ft.Text("未能解析出項目"))
                  self.main_page.snack_bar.open = True
                  return
-            for mat_type, group_items_list in grouped_items.items():
-                matched_suppliers = database.search_suppliers([mat_type], [])
+
+            all_suppliers = database.get_suppliers()
+
+            for mat_type, items_list in grouped_items.items():
+                # 判定整組材質所需的最高認證 (若任一項需航太，整組需航太)
+                req_qual = "ISO"
+                for it in items_list:
+                    q = it.get("qualification", "ISO")
+                    if q == "Aerospace": req_qual = "Aerospace"
+                    elif q == "Automotive" and req_qual == "ISO": req_qual = "Automotive"
+
+                # 供應商篩選：材質匹配 + 認證匹配
+                matched_suppliers = []
+                for s in all_suppliers:
+                    s_mats = from_json_str(s[6])
+                    s_quals = from_json_str(s[8])
+                    # 若詢價需航太，供應商必須有航太；以此類推。ISO 是基本盤，大家都有
+                    if mat_type in s_mats and req_qual in s_quals:
+                        matched_suppliers.append(s)
+
                 supplier_options = [ft.dropdown.Option(str(s[0]), f"{s[1]} ({s[2]})") for s in matched_suppliers]
                 ui_rows_data = [] 
-                data_rows = []
-                for idx, item in enumerate(group_items_list):
-                    database.save_rfq_item(req_id, idx, mat_type, item.get("form", "Other"), json.dumps(item), [s[0] for s in matched_suppliers])
-                    txt_spec = ft.TextField(value=item.get("material_spec", "-"), border=ft.InputBorder.UNDERLINE, dense=True, text_size=13, expand=True)
-                    txt_form = ft.TextField(value=item.get("form", "-"), border=ft.InputBorder.UNDERLINE, dense=True, text_size=13, width=80)
-                    txt_dims = ft.TextField(value=item.get("dimensions", "-"), border=ft.InputBorder.UNDERLINE, dense=True, text_size=13, expand=True)
-                    txt_qty = ft.TextField(value=item.get("quantity", "-"), border=ft.InputBorder.UNDERLINE, dense=True, text_size=13, width=80)
-                    txt_notes = ft.TextField(value=item.get("notes", "-"), border=ft.InputBorder.UNDERLINE, dense=True, text_size=13, expand=True)
-                    txt_moq = ft.TextField(value="", border=ft.InputBorder.UNDERLINE, dense=True, text_size=13, width=80, hint_text="if need")
-                    ui_rows_data.append({"mat_type": mat_type, "spec": txt_spec, "form": txt_form, "dimensions": txt_dims, "quantity": txt_qty, "moq": txt_moq, "notes": txt_notes})
-                    data_rows.append(ft.DataRow(cells=[ft.DataCell(ft.Text(str(idx + 1))), ft.DataCell(txt_spec), ft.DataCell(txt_form), ft.DataCell(txt_dims), ft.DataCell(txt_qty), ft.DataCell(ft.Text("(Vendor)")), ft.DataCell(txt_moq), ft.DataCell(txt_notes)]))
-                items_table = ft.DataTable(columns=[ft.DataColumn(ft.Text("#")), ft.DataColumn(ft.Text("Spec")), ft.DataColumn(ft.Text("Form")), ft.DataColumn(ft.Text("Dimensions")), ft.DataColumn(ft.Text("Qty")), ft.DataColumn(ft.Text("Price")), ft.DataColumn(ft.Text("MOQ")), ft.DataColumn(ft.Text("Notes"))], rows=data_rows, border=ft.border.all(1, ft.Colors.GREY_300))
-                supp_dds = [ft.Dropdown(label=f"供應商 {i+1}", options=supplier_options, width=200, dense=True) for i in range(4)]
-                batch_draft_btn = ft.Button("生成草稿 (批次)", icon=ft.Icons.EMAIL, on_click=lambda e, rows=ui_rows_data, mt=mat_type, dds=supp_dds: self.generate_batch_drafts(rows, dds, mt))
-                card = ft.Card(content=ft.Container(padding=20, content=ft.Column([ft.Row([ft.Icon(ft.Icons.CATEGORY, color=ft.Colors.BLUE), ft.Text(f"材質群組: {mat_type}", size=20, weight=ft.FontWeight.BOLD)]), ft.Divider(), ft.Row([items_table],expand=True,scroll=ft.ScrollMode.AUTO), ft.Divider(), ft.Text("選擇詢價對象 (最多 4 家):", weight=ft.FontWeight.BOLD), ft.Row(supp_dds, wrap=True), ft.Row([batch_draft_btn], alignment=ft.MainAxisAlignment.END)])))
-                self.results_container.controls.append(card)
+                item_cards_col = ft.Column()
+
+                for idx, item in enumerate(items_list):
+                    # 建立「大卡片」內的輸入框
+                    txt_spec = ft.TextField(label="Spec", value=item.get("material_spec", "-"), expand=True)
+                    txt_form = ft.TextField(label="Form", value=item.get("form", "-"), width=120)
+                    txt_dims = ft.TextField(label="Dimensions", value=item.get("dimensions", "-"), expand=True)
+                    txt_qty = ft.TextField(label="Quantity", value=item.get("quantity", "-"), width=100)
+                    txt_moq = ft.TextField(label="MOQ (Vendor)", value="", width=100, hint_text="if need")
+                    txt_notes = ft.TextField(label="Notes", value=item.get("notes", "-"), multiline=True, expand=True)
+                    
+                    ui_rows_data.append({
+                        "mat_type": mat_type, "spec": txt_spec, "form": txt_form, "dimensions": txt_dims, 
+                        "quantity": txt_qty, "moq": txt_moq, "notes": txt_notes,
+                        "qual": item.get("qualification", "ISO")
+                    })
+
+                    item_cards_col.controls.append(ft.Card(
+                        content=ft.Container(
+                            padding=15,
+                            content=ft.Column([
+                                ft.Row([
+                                    ft.Text(f"項目 #{idx + 1}", weight="bold"),
+                                    ft.Text(f"判定認證: {item.get('qualification', 'ISO')}", color=ft.Colors.BLUE_GREY)
+                                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                                ft.Row([txt_spec, txt_form]),
+                                ft.Row([txt_dims, txt_qty, txt_moq]),
+                                txt_notes,
+                            ])
+                        )
+                    ))
+
+                # 四個供應商選單
+                supp_dds = [ft.Dropdown(label=f"供應商 {i+1}", options=supplier_options, width=220, dense=True) for i in range(4)]
+                batch_draft_btn = ft.Button("生成草稿 (批次)", icon=ft.Icons.EMAIL, 
+                                          on_click=lambda e, rows=ui_rows_data, mt=mat_type, dds=supp_dds: self.generate_batch_drafts(rows, dds, mt))
+                
+                # 外層群組 Card
+                group_card = ft.Card(
+                    color=ft.Colors.BLUE_50,
+                    content=ft.Container(
+                        padding=20,
+                        content=ft.Column([
+                            ft.Row([ft.Icon(ft.Icons.CATEGORY, color=ft.Colors.BLUE), ft.Text(f"材質群組: {mat_type}", size=22, weight=ft.FontWeight.BOLD)]),
+                            ft.Divider(),
+                            item_cards_col,
+                            ft.Divider(),
+                            ft.Text(f"推薦供應商 (基於 {req_qual} 認證):", weight=ft.FontWeight.BOLD),
+                            ft.Row(supp_dds, wrap=True),
+                            ft.Row([batch_draft_btn], alignment=ft.MainAxisAlignment.END)
+                        ])
+                    )
+                )
+                self.results_container.controls.append(group_card)
         except Exception as ex:
             self.main_page.snack_bar = ft.SnackBar(ft.Text(f"發生錯誤: {str(ex)}"))
             self.main_page.snack_bar.open = True
@@ -370,14 +402,31 @@ class RFQAnalyzer(ft.Column):
             self.main_page.snack_bar = ft.SnackBar(ft.Text("請至少選擇 1 家供應商"))
             self.main_page.snack_bar.open = True
             return
+        
         suppliers_db = database.get_suppliers()
         templates = database.get_templates()
         template = templates[0] if templates else (0, "Default", "Inquiry {date}", "<p>Hi,</p>", "<p>Thanks</p>", "", "", "", "", "", "", "", 0)
+        
         tmpl_cc = template[11] if len(template) > 11 else ""
         use_default_subj = template[12] if len(template) > 12 else 0
-        current_items_data = [{"material_type": r["mat_type"], "material_spec": r["spec"].value, "form": r["form"].value, "dimensions": r["dimensions"].value, "quantity": r["quantity"].value, "moq": r["moq"].value, "notes": r["notes"].value} for r in ui_rows]
-        table_rows_html = "".join([f"<tr><td style='border: 1px solid #333; padding: 10px;'>{item['material_type']}</td><td style='border: 1px solid #333; padding: 10px;'>{item['material_spec']}</td><td style='border: 1px solid #333; padding: 10px;'>{item['form']}</td><td style='border: 1px solid #333; padding: 10px;'>{item['dimensions']}</td><td style='border: 1px solid #333; padding: 10px;'>{item['quantity']}</td><td style='border: 1px solid #333; padding: 10px;'></td><td style='border: 1px solid #333; padding: 10px;'>{item['moq']}</td><td style='border: 1px solid #333; padding: 10px;'>{item['notes']}</td></tr>" for item in current_items_data])
-        full_table_html = f"<table style='border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 13px;'><thead><tr><th style='border: 1px solid #333; padding: 10px; background-color: #eee;'>Material</th><th style='border: 1px solid #333; padding: 10px; background-color: #eee;'>Spec</th><th style='border: 1px solid #333; padding: 10px; background-color: #eee;'>Form</th><th style='border: 1px solid #333; padding: 10px; background-color: #eee;'>Dimensions</th><th style='border: 1px solid #333; padding: 10px; background-color: #eee;'>Quantity</th><th style='border: 1px solid #333; padding: 10px; background-color: #eee;'>Price</th><th style='border: 1px solid #333; padding: 10px; background-color: #eee;'>MOQ</th><th style='border: 1px solid #333; padding: 10px; background-color: #eee;'>Notes</th></tr></thead><tbody>{table_rows_html}</tbody></table>"
+
+        # 組成 HTML 表格
+        table_rows_html = ""
+        for r in ui_rows:
+            table_rows_html += f"""
+            <tr>
+                <td style='border: 1px solid #333; padding: 10px;'>{r['mat_type']}<br>({r['qual']})</td>
+                <td style='border: 1px solid #333; padding: 10px;'>{r['spec'].value}</td>
+                <td style='border: 1px solid #333; padding: 10px;'>{r['form'].value}</td>
+                <td style='border: 1px solid #333; padding: 10px;'>{r['dimensions'].value}</td>
+                <td style='border: 1px solid #333; padding: 10px;'>{r['quantity'].value}</td>
+                <td style='border: 1px solid #333; padding: 10px;'></td>
+                <td style='border: 1px solid #333; padding: 10px;'>{r['moq'].value}</td>
+                <td style='border: 1px solid #333; padding: 10px;'>{r['notes'].value}</td>
+            </tr>"""
+        
+        full_table_html = f"<table style='border-collapse: collapse; width: 100%; font-size: 13px;'><thead><tr style='background-color: #eee;'><th style='border: 1px solid #333; padding: 10px;'>Material</th><th style='border: 1px solid #333; padding: 10px;'>Spec</th><th style='border: 1px solid #333; padding: 10px;'>Form</th><th style='border: 1px solid #333; padding: 10px;'>Dimensions</th><th style='border: 1px solid #333; padding: 10px;'>Quantity</th><th style='border: 1px solid #333; padding: 10px;'>Price</th><th style='border: 1px solid #333; padding: 10px;'>MOQ</th><th style='border: 1px solid #333; padding: 10px;'>Notes</th></tr></thead><tbody>{table_rows_html}</tbody></table>"
+
         try:
             if os.name == 'nt':
                 import win32com.client
@@ -387,11 +436,12 @@ class RFQAnalyzer(ft.Column):
                     if not supplier: continue
                     if use_default_subj: subject = f"RFQ{datetime.now().strftime('%y%m%d%H')}_{material_type_group}_{supplier[1]}"
                     else: subject = (template[2] or "Inquiry").format(date=datetime.now().strftime("%Y%m%d")) + f"_{supplier[1]}"
+                    
                     mail = outlook.CreateItem(0)
                     mail.Subject, mail.To, mail.CC = subject, supplier[3], tmpl_cc
                     mail.HTMLBody = f"<div>{template[3]}</div><br>{full_table_html}<br><div>{template[4]}</div>"
                     mail.Save()
-                self.main_page.snack_bar = ft.SnackBar(ft.Text(f"成功建立 {len(selected_ids)} 封草稿"))
+                self.main_page.snack_bar = ft.SnackBar(ft.Text(f"成功建立 {len(set(selected_ids))} 封草稿"))
             else: self.main_page.snack_bar = ft.SnackBar(ft.Text("非 Windows 環境: 模擬成功"))
             self.main_page.snack_bar.open = True
         except Exception as ex:
@@ -402,9 +452,9 @@ class RFQAnalyzer(ft.Column):
 # --- 主程式 ---
 def main(page: ft.Page):
     database.init_db()
-    page.title = "RFQ System v1.6.1 (Scroll Fix)"
+    page.title = "RFQ System v1.7 (Certification Logic)"
     page.theme_mode = ft.ThemeMode.LIGHT
-    page.window_width, page.window_height = 1300, 900 # 稍微加寬
+    page.window_width, page.window_height = 1400, 950 # 修改窗格大小
 
     current_lang = "zh"
     supplier_manager = SupplierManager(page, current_lang)
@@ -429,9 +479,9 @@ def main(page: ft.Page):
     rail = ft.NavigationRail(
         selected_index=0, label_type=ft.NavigationRailLabelType.ALL, min_width=100, min_extended_width=200, group_alignment=-0.9,
         destinations=[
-            ft.NavigationRailDestination(icon=ft.Icons.PERSON_OUTLINE, selected_icon=ft.Icons.PERSON, label="供應商管理"),
-            ft.NavigationRailDestination(icon=ft.Icons.ANALYTICS_OUTLINED, selected_icon=ft.Icons.ANALYTICS, label="詢價解析"),
-            ft.NavigationRailDestination(icon=ft.Icons.SETTINGS_OUTLINED, selected_icon=ft.Icons.SETTINGS, label="樣板設定"),
+            ft.NavigationRailDestination(icon=ft.Icons.PERSON_OUTLINE, label="供應商管理"),
+            ft.NavigationRailDestination(icon=ft.Icons.ANALYTICS_OUTLINED, label="詢價解析"),
+            ft.NavigationRailDestination(icon=ft.Icons.SETTINGS_OUTLINED, label="樣板設定"),
         ],
         on_change=on_nav_change,
     )
