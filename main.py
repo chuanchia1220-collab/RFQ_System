@@ -400,8 +400,8 @@ class RFQAnalyzer(ft.Column):
         self.analyze_btn.disabled = False
         self.analyze_btn.text = "開始解析"
 
-    def generate_draft(self, supplier_dropdown, item):
-        print("\n[Draft] 按鈕被點擊，開始生成流程...")
+def generate_draft(self, supplier_dropdown, item):
+        print("\n[Draft] 生成表格化草稿...")
         supplier_id = supplier_dropdown.value
         if not supplier_id:
             self.main_page.snack_bar = ft.SnackBar(ft.Text("請先選擇供應商"))
@@ -414,36 +414,35 @@ class RFQAnalyzer(ft.Column):
         templates = database.get_templates()
         template = templates[0] if templates else (0, "Default", "Inquiry {date}", "<p>Hi,</p>", "<p>Thanks</p>")
 
-        from datetime import datetime
         subject = template[2].format(date=datetime.now().strftime("%Y%m%d")) + f"_{supplier[1]}"
         
-        # 準備資料
+        # 資料提取
         mat_type = item.get('material_type', '')
         form_type = item.get('form', '')
         spec = item.get('spec', {})
-        dims = spec.get('dimensions', '')
-        quantities = item.get('quantities', [])
         
-        # 如果沒有多數量列表，嘗試找單一數量
-        if not quantities:
-            single_qty = spec.get('quantity', spec.get('annual_qty', ''))
-            if single_qty: quantities = [single_qty]
-            else: quantities = ["-"]
+        # 尺寸處理：如果 dimensions 是字典則轉字串，如果是字串則直接使用
+        dims_data = spec.get('dimensions', '-')
+        if isinstance(dims_data, dict):
+            dims_str = ", ".join([f"{k}:{v}" for k, v in dims_data.items()])
+        else:
+            dims_str = str(dims_data)
 
-        # 【關鍵功能】建立 HTML 表格
-        table_style = "border-collapse: collapse; width: 100%;"
-        th_style = "border: 1px solid #ddd; padding: 8px; background-color: #f2f2f2; text-align: left;"
-        td_style = "border: 1px solid #ddd; padding: 8px;"
+        quantities = item.get('quantities', ["-"])
+
+        # HTML 表格定義
+        table_style = "border-collapse: collapse; width: 100%; font-family: Arial, sans-serif;"
+        th_style = "border: 1px solid #ddd; padding: 12px; background-color: #f8f9fa; text-align: left;"
+        td_style = "border: 1px solid #ddd; padding: 12px;"
         
-        # 表頭
         table_html = f"<table style='{table_style}'>"
-        table_html += f"<tr><th style='{th_style}'>Material</th><th style='{th_style}'>Form</th><th style='{th_style}'>Dimensions</th><th style='{th_style}'>Quantity</th></tr>"
+        table_html += f"<thead><tr><th style='{th_style}'>Material</th><th style='{th_style}'>Form</th><th style='{th_style}'>Dimensions</th><th style='{th_style}'>Quantity</th></tr></thead>"
+        table_html += "<tbody>"
         
-        # 表格內容 (自動將多個數量拆分為不同行)
         for qty in quantities:
-            table_html += f"<tr><td style='{td_style}'>{mat_type}</td><td style='{td_style}'>{form_type}</td><td style='{td_style}'>{dims}</td><td style='{td_style}'>{qty}</td></tr>"
+            table_html += f"<tr><td style='{td_style}'>{mat_type}</td><td style='{td_style}'>{form_type}</td><td style='{td_style}'>{dims_str}</td><td style='{td_style}'>{qty}</td></tr>"
         
-        table_html += "</table>"
+        table_html += "</tbody></table>"
 
         try:
             if os.name == 'nt':
@@ -451,19 +450,19 @@ class RFQAnalyzer(ft.Column):
                 outlook = win32com.client.Dispatch('Outlook.Application')
                 mail = outlook.CreateItem(0)
                 mail.Subject = subject
-                # 組合最終 Email：Preamble + Table + Closing
-                mail.HTMLBody = f"{template[3]}<br><br>{table_html}<br><br>{template[4]}"
+                # 組合 Email
+                mail.HTMLBody = f"<div>{template[3]}</div><br>{table_html}<br><div>{template[4]}</div>"
                 mail.To = supplier[3]
                 mail.Save()
-                msg = "Outlook 草稿已建立 (含表格)"
+                msg = "Outlook 表格化草稿已建立"
             else:
-                msg = f"非 Windows 環境: 已模擬建立草稿"
+                msg = "非 Windows 環境，僅模擬生成"
             
             self.main_page.snack_bar = ft.SnackBar(ft.Text(msg))
             self.main_page.snack_bar.open = True
             
         except Exception as ex:
-            print(f"[Draft 錯誤] Outlook 操作失敗: {ex}")
+            print(f"[Draft 錯誤] {ex}")
             self.main_page.snack_bar = ft.SnackBar(ft.Text(f"草稿建立失敗: {str(ex)}"))
             self.main_page.snack_bar.open = True
             
