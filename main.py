@@ -28,6 +28,7 @@ class SupplierManager(ft.Column):
         self.suppliers = []
         self.editing_id = None
         
+        # 1. 初始化輸入欄位
         self.input_name = ft.TextField(label=self.t["name"])
         self.input_contact = ft.TextField(label=self.t["contact"])
         self.input_email = ft.TextField(label=self.t["email"])
@@ -37,6 +38,7 @@ class SupplierManager(ft.Column):
         self.check_forms = self._create_checkbox_group(OPTIONS["form_types"])
         self.check_qualifications = self._create_checkbox_group(OPTIONS["qualifications"])
 
+        # 2. 建立對話框
         self.dialog = ft.AlertDialog(
             title=ft.Text(self.t["add_supplier"]),
             content=ft.Container(
@@ -56,6 +58,7 @@ class SupplierManager(ft.Column):
         )
         self.main_page.overlay.append(self.dialog)
 
+        # 3. UI 佈局
         self.data_table = ft.DataTable(
             columns=[ft.DataColumn(ft.Text(self.t[k])) for k in ["name", "contact", "phone", "materials", "forms", "qualifications", "actions"]],
             rows=[]
@@ -235,7 +238,6 @@ class TemplateManager(ft.Column):
         ]
 
     def toggle_subject_input(self, e):
-        # 當勾選「使用預設主旨」時，禁用主旨輸入框
         self.input_subject.disabled = self.chk_default_subject.value
         self.input_subject.update()
 
@@ -245,7 +247,6 @@ class TemplateManager(ft.Column):
         for t in self.templates:
             # t: (id, name, subject, preamble, closing, fields, font, size, styles, by, at, cc, use_default)
             t_id = t[0]
-            # 兼容舊資料 (可能沒有 use_default_subject 欄位，視 database.py 是否剛更新)
             try:
                 use_default = t[12] if len(t) > 12 else 0
             except:
@@ -290,7 +291,6 @@ class TemplateManager(ft.Column):
         self.input_preamble.value = tmpl[3] or ""
         self.input_closing.value = tmpl[4] or ""
         
-        # 讀取新增欄位 (需做索引保護)
         cc_val = tmpl[11] if len(tmpl) > 11 else ""
         use_default_val = tmpl[12] if len(tmpl) > 12 else 0
 
@@ -315,8 +315,8 @@ class TemplateManager(ft.Column):
                 self.input_subject.value, 
                 self.input_preamble.value, 
                 self.input_closing.value,
-                self.input_cc.value,  # CC
-                use_def               # Default Subject
+                self.input_cc.value, 
+                use_def
             )
         else:
             database.add_template(
@@ -419,8 +419,11 @@ class RFQAnalyzer(ft.Column):
                     txt_qty = ft.TextField(value=item.get("quantity", "-"), border=ft.InputBorder.UNDERLINE, dense=True, text_size=13, width=80)
                     txt_notes = ft.TextField(value=item.get("notes", "-"), border=ft.InputBorder.UNDERLINE, dense=True, text_size=13, expand=True)
                     
-                    # 新增 Price 欄位 (UI 顯示用，唯讀或給個 placeholder)
+                    # Price 欄位 (唯讀/Placeholder)
                     txt_price = ft.TextField(value="", disabled=True, border=ft.InputBorder.NONE, dense=True, text_size=13, width=60, hint_text="(Vendor)")
+
+                    # 新增 MOQ 欄位 (可編輯)
+                    txt_moq = ft.TextField(value="", border=ft.InputBorder.UNDERLINE, dense=True, text_size=13, width=80, hint_text="if need")
 
                     ui_rows_data.append({
                         "mat_type": mat_type,
@@ -428,6 +431,7 @@ class RFQAnalyzer(ft.Column):
                         "form": txt_form,
                         "dimensions": txt_dims,
                         "quantity": txt_qty,
+                        "moq": txt_moq,  # 加入 moq 參照
                         "notes": txt_notes
                     })
 
@@ -438,7 +442,8 @@ class RFQAnalyzer(ft.Column):
                             ft.DataCell(txt_form),
                             ft.DataCell(txt_dims),
                             ft.DataCell(txt_qty),
-                            ft.DataCell(txt_price), # UI 上顯示 Price 欄
+                            ft.DataCell(txt_price), 
+                            ft.DataCell(txt_moq),   # UI 顯示 MOQ
                             ft.DataCell(txt_notes),
                         ])
                     )
@@ -450,7 +455,8 @@ class RFQAnalyzer(ft.Column):
                         ft.DataColumn(ft.Text("Form")),
                         ft.DataColumn(ft.Text("Dimensions")),
                         ft.DataColumn(ft.Text("Qty")),
-                        ft.DataColumn(ft.Text("Price")), # 新增 Price 標頭
+                        ft.DataColumn(ft.Text("Price")),
+                        ft.DataColumn(ft.Text("MOQ")), # 新增標題
                         ft.DataColumn(ft.Text("Notes")),
                     ],
                     rows=data_rows,
@@ -466,7 +472,6 @@ class RFQAnalyzer(ft.Column):
                 supp_dd3 = ft.Dropdown(label="供應商 3", options=supplier_options, width=200, dense=True)
                 supp_dd4 = ft.Dropdown(label="供應商 4", options=supplier_options, width=200, dense=True)
 
-                # 傳入 mat_type 以便產生主旨
                 batch_draft_btn = ft.Button(
                     "生成草稿 (批次)",
                     icon=ft.Icons.EMAIL,
@@ -521,14 +526,12 @@ class RFQAnalyzer(ft.Column):
         
         suppliers_db = database.get_suppliers()
         templates = database.get_templates()
-        # Template Tuple: (0:id, 1:name, 2:subject, 3:pre, 4:close, ..., 11:cc, 12:use_default)
         template = templates[0] if templates else (0, "Default", "Inquiry {date}", "<p>Hi,</p>", "<p>Thanks</p>", "", "", "", "", "", "", "", 0)
         
-        # 讀取樣板設定
         tmpl_cc = template[11] if len(template) > 11 else ""
         use_default_subj = template[12] if len(template) > 12 else 0
 
-        # 1. 從 UI 輸入框讀取數據
+        # 1. 從 UI 讀取數據 (含 MOQ)
         current_items_data = []
         for row in ui_rows:
             current_items_data.append({
@@ -537,10 +540,11 @@ class RFQAnalyzer(ft.Column):
                 "form": row["form"].value,
                 "dimensions": row["dimensions"].value,
                 "quantity": row["quantity"].value,
+                "moq": row["moq"].value, # 讀取 MOQ
                 "notes": row["notes"].value
             })
 
-        # 2. 建立 HTML 表格內容 (新增 Price 欄位)
+        # 2. 建立 HTML 表格內容 (加入 MOQ)
         table_style = "border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 13px;"
         th_style = "border: 1px solid #333; padding: 10px; background-color: #eee; text-align: left;"
         td_style = "border: 1px solid #333; padding: 10px;"
@@ -554,7 +558,7 @@ class RFQAnalyzer(ft.Column):
                 <td style='{td_style}'>{item['form']}</td>
                 <td style='{td_style}'>{item['dimensions']}</td>
                 <td style='{td_style}'>{item['quantity']}</td>
-                <td style='{td_style}'></td> <td style='{td_style}'>{item['notes']}</td>
+                <td style='{td_style}'></td> <td style='{td_style}'>{item['moq']}</td> <td style='{td_style}'>{item['notes']}</td>
             </tr>
             """
         
@@ -567,7 +571,9 @@ class RFQAnalyzer(ft.Column):
                     <th style='{th_style}'>Form</th>
                     <th style='{th_style}'>Dimensions</th>
                     <th style='{th_style}'>Quantity</th>
-                    <th style='{th_style}'>Price</th> <th style='{th_style}'>Notes</th>
+                    <th style='{th_style}'>Price</th>
+                    <th style='{th_style}'>MOQ</th>
+                    <th style='{th_style}'>Notes</th>
                 </tr>
             </thead>
             <tbody>
@@ -586,16 +592,12 @@ class RFQAnalyzer(ft.Column):
                     supplier = next((s for s in suppliers_db if str(s[0]) == str(supp_id)), None)
                     if not supplier: continue
                     
-                    # 主旨生成邏輯
                     if use_default_subj:
-                        # 格式: RFQYYMMDDHH_材質_供應商
-                        date_str = datetime.now().strftime("%y%m%d%H") # 兩碼年+月+日+時
+                        date_str = datetime.now().strftime("%y%m%d%H")
                         subject = f"RFQ{date_str}_{material_type_group}_{supplier[1]}"
                     else:
-                        # 使用自訂格式
                         raw_subj = template[2] or "Inquiry"
                         try:
-                            # 嘗試簡單格式化 (可視需求擴充)
                             subject = raw_subj.format(date=datetime.now().strftime("%Y%m%d")) + f"_{supplier[1]}"
                         except:
                             subject = raw_subj + f"_{supplier[1]}"
@@ -604,7 +606,6 @@ class RFQAnalyzer(ft.Column):
                     mail.Subject = subject
                     mail.HTMLBody = f"<div>{template[3]}</div><br>{full_table_html}<br><div>{template[4]}</div>"
                     mail.To = supplier[3]
-                    # 設定副本
                     if tmpl_cc:
                         mail.CC = tmpl_cc
                         
@@ -629,7 +630,7 @@ class RFQAnalyzer(ft.Column):
 # --- 主程式 ---
 def main(page: ft.Page):
     database.init_db()
-    page.title = "RFQ System v1.5 (Subject & CC)"
+    page.title = "RFQ System v1.6 (MOQ & Notes Fix)"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.window_width, page.window_height = 1200, 800
 
@@ -673,4 +674,4 @@ def main(page: ft.Page):
     supplier_manager.load_data()
 
 if __name__ == "__main__":
-    ft.app(main)
+    ft.run(main)
