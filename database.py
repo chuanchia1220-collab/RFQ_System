@@ -70,7 +70,9 @@ def init_db():
         "font_family": "TEXT",
         "font_size": "INTEGER",
         "table_styles": "TEXT",
-        "created_by": "TEXT"
+        "created_by": "TEXT",
+        "cc_recipients": "TEXT",       # 新增: 副本欄位
+        "use_default_subject": "INTEGER" # 新增: 是否使用預設主旨 (0 or 1)
     }
     for col, dtype in template_cols.items():
         try:
@@ -156,25 +158,26 @@ def delete_supplier(supplier_id):
 
 # --- CRUD Operations for Templates ---
 
-def add_template(name, subject_format, preamble_html, closing_html):
+# Updated to include cc_recipients and use_default_subject
+def add_template(name, subject_format, preamble_html, closing_html, cc_recipients="", use_default_subject=0):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO templates (name, subject_format, preamble_html, closing_html)
-        VALUES (?, ?, ?, ?)
-    ''', (name, subject_format, preamble_html, closing_html))
+        INSERT INTO templates (name, subject_format, preamble_html, closing_html, cc_recipients, use_default_subject)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (name, subject_format, preamble_html, closing_html, cc_recipients, use_default_subject))
     conn.commit()
     if DB_NAME != ":memory:":
         conn.close()
 
-def update_template(template_id, name, subject_format, preamble_html, closing_html):
+def update_template(template_id, name, subject_format, preamble_html, closing_html, cc_recipients, use_default_subject):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
         UPDATE templates
-        SET name = ?, subject_format = ?, preamble_html = ?, closing_html = ?
+        SET name = ?, subject_format = ?, preamble_html = ?, closing_html = ?, cc_recipients = ?, use_default_subject = ?
         WHERE id = ?
-    ''', (name, subject_format, preamble_html, closing_html, template_id))
+    ''', (name, subject_format, preamble_html, closing_html, cc_recipients, use_default_subject, template_id))
     conn.commit()
     if DB_NAME != ":memory:":
         conn.close()
@@ -196,10 +199,9 @@ def get_templates():
         conn.close()
     return rows
 
-# --- RFQ Operations ---
+# --- RFQ Operations --- (Unchanged)
 
 def save_rfq_request(raw_text, parsed_items_json, created_by="system"):
-    """Saves the raw RFQ text and parsed result."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
@@ -213,7 +215,6 @@ def save_rfq_request(raw_text, parsed_items_json, created_by="system"):
     return req_id
 
 def save_rfq_item(request_id, item_index, material_type, form_type, spec_json, matched_suppliers_ids):
-    """Saves a single parsed item from an RFQ."""
     conn = get_connection()
     cursor = conn.cursor()
     matched_suppliers_json = json.dumps(matched_suppliers_ids)
@@ -226,14 +227,6 @@ def save_rfq_item(request_id, item_index, material_type, form_type, spec_json, m
         conn.close()
 
 def search_suppliers(materials_list, forms_list):
-    """
-    Searches for suppliers that match at least one material OR one form.
-    Args:
-        materials_list (list): List of material strings.
-        forms_list (list): List of form strings.
-    Returns:
-        list: List of matching supplier rows.
-    """
     conn = get_connection()
     cursor = conn.cursor()
     all_suppliers = get_suppliers()
@@ -243,27 +236,18 @@ def search_suppliers(materials_list, forms_list):
     target_forms = set(forms_list)
 
     for supplier in all_suppliers:
-        # Supplier columns: id, name, contact, email, phone, address, materials, forms, ...
-        # indexes: 0, 1, 2, 3, 4, 5, 6, 7
         try:
             s_materials = set(json.loads(supplier[6])) if supplier[6] else set()
             s_forms = set(json.loads(supplier[7])) if supplier[7] else set()
-
-            # Check for intersection
             mat_match = not s_materials.isdisjoint(target_materials)
             form_match = not s_forms.isdisjoint(target_forms)
-
             if mat_match or form_match:
                 matched_suppliers.append(supplier)
-
         except json.JSONDecodeError:
             continue
 
     conditions = []
     params = []
-
-    # Filter for materials (JSON array of strings)
-    # Using LIKE '%"Material"%' to ensure strict match within JSON array
     if materials_list:
         mat_conditions = []
         for m in materials_list:
@@ -272,7 +256,6 @@ def search_suppliers(materials_list, forms_list):
         if mat_conditions:
             conditions.append(f"({' OR '.join(mat_conditions)})")
 
-    # Filter for forms
     if forms_list:
         form_conditions = []
         for f in forms_list:
@@ -281,13 +264,10 @@ def search_suppliers(materials_list, forms_list):
         if form_conditions:
             conditions.append(f"({' OR '.join(form_conditions)})")
 
-    # Combine with OR: (mat1 OR mat2) OR (form1 OR form2)
-    # The requirement is match at least one material OR one form.
     if not conditions:
         return []
 
     sql = f"SELECT * FROM suppliers WHERE {' OR '.join(conditions)}"
-
     cursor.execute(sql, params)
     rows = cursor.fetchall()
     conn.close()
