@@ -1,3 +1,5 @@
+# analyzer.py 完整覆蓋
+
 import os
 import json
 import openai
@@ -20,25 +22,19 @@ def analyze_rfq(text):
     material_opts = ", ".join(material_opts_list)
     form_opts = ", ".join(form_opts_list)
 
-    system_prompt = "你是專業的採購助理。你的任務是將詢價單轉換為結構化 JSON 資料。"
+    system_prompt = "你是專業的採購助理，負責將詢價文字轉為精確的 JSON 資料。"
     
-    # 【關鍵修正】加入多數量 (quantities) 的提取邏輯
+    # 強化尺寸與厚度判斷邏輯
     user_prompt = (
-        f"請分析以下詢價內容 (RFQ text)：\n{text}\n\n"
-        f"合法材料選項 (Valid materials): {material_opts}\n"
-        f"合法形狀選項 (Valid forms): {form_opts}\n\n"
-        f"*** 判斷邏輯 (CRITICAL RULES) ***\n"
-        f"1. **厚度判斷**: 找出尺寸中最小的數值視為「厚度」。\n"
-        f"   - 若厚度 >= 10mm，形狀設為 'Plate'。\n"
-        f"   - 若厚度 < 10mm，形狀設為 'Sheet'。\n"
-        f"2. **塊狀規則**: 若品項描述為 'Block'、'Cuboid'，請歸類為 'Plate'。\n"
-        f"3. **材料對照**: '316L' 屬於 'Stainless Steel'。\n"
-        f"4. **數量邏輯 (Quantity)**: 若同一品項有多個詢價數量 (例如 10pcs 和 2000pcs)，請提取為陣列。\n"
-        f"   - 欄位名稱必須為 'quantities' (Array of integers/strings)。\n"
-        f"5. **輸出格式**: \n"
-        f"   - 僅回傳 JSON 物件，根節點為 'items'。\n"
-        f"   - 每個 item 需包含 'quantities' 欄位。\n"
-        f"   - 欄位值必須只回傳「英文代碼」。\n"
+        f"請分析以下詢價內容：\n{text}\n\n"
+        f"合法材料 (Valid materials): {material_opts}\n"
+        f"合法形狀 (Valid forms): {form_opts}\n\n"
+        f"*** 執行規範 ***\n"
+        f"1. **厚度與形狀規則**：找出尺寸中最小的數值。若最小邊 >= 10mm 或是品項為 'Block' (塊材)，形狀請設為 'Plate' (板材-厚)。\n"
+        f"2. **尺寸提取**：請將尺寸完整提取為字串（例如：'30mm*30mm*40mm'），存於 spec.dimensions 欄位中。\n"
+        f"3. **數量拆分**：若有多個詢價數量 (如 10pcs, 2000pcs)，請存入 'quantities' 陣列。\n"
+        f"4. **材料對照**：'316L' 對應 'Stainless Steel'。\n"
+        f"5. **回傳格式**：回傳根節點為 'items' 的 JSON 物件。欄位值必須使用英文代碼。\n"
     )
 
     try:
@@ -49,48 +45,36 @@ def analyze_rfq(text):
         )
         content = response.choices[0].message.content.strip()
         
-        print(f"[AI Debug] 原始回傳內容: >>>{content}<<<")
-
-        if not content:
-            print("[AI 錯誤] AI 回傳空字串")
-            return {"items": []}
-
+        # 清理代碼塊
         if "```json" in content: content = content.split("```json")[1].split("```")[0].strip()
         elif "```" in content: content = content.split("```")[1].split("```")[0].strip()
 
         raw_data = json.loads(content)
-        
-        items = []
-        for key in ["items", "RFQ_items", "rfq_items", "Items"]:
-            if key in raw_data:
-                items = raw_data[key]
-                break
+        items = raw_data.get("items", [])
         
         final_items = []
         for raw_item in items:
-            ai_form = raw_item.get("form", raw_item.get("form_type", "Other"))
+            # 取得 spec 物件，確保 dimensions 存在
+            spec = raw_item.get("spec", {})
             
-            # 確保 quantities 是個列表
-            qty = raw_item.get("quantities", raw_item.get("quantity", []))
-            if not isinstance(qty, list):
-                qty = [qty] if qty else []
+            # 處理數量
+            qty = raw_item.get("quantities", [])
+            if not qty:
+                qty = [spec.get("annual_qty", "-")]
 
             cleaned = {
                 "item_index": raw_item.get("item_index", 0),
                 "confidence": raw_item.get("confidence", 0.9),
-                "spec": raw_item.get("spec", raw_item),
-                "material_type": raw_item.get("material_type", raw_item.get("material", "Other")),
-                "form": ai_form,
-                "quantities": qty # 這裡會儲存 [10, 2000]
+                "material_type": raw_item.get("material_type", "Other"),
+                "form": raw_item.get("form", "Other"),
+                "spec": spec,  # 這裡包含 dimensions 字串
+                "quantities": qty
             }
             final_items.append(cleaned)
 
-        print(f"[AI] 解析成功，取得 {len(final_items)} 筆資料")
+        print(f"[AI] 解析成功，尺寸內容: {[i['spec'].get('dimensions') for i in final_items]}")
         return {"items": final_items}
 
-    except json.JSONDecodeError as e:
-        print(f"[AI 錯誤] JSON 解析失敗: {e}")
-        return {"items": []}
     except Exception as e:
         print(f"[AI 錯誤] {e}")
         return {"items": []}
