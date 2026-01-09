@@ -14,20 +14,20 @@ def analyze_rfq(text):
     material_opts = ", ".join(OPTIONS["material_types"])
     form_opts = ", ".join(OPTIONS["form_types"])
 
-    system_prompt = "You are an expert procurement assistant. You MUST return valid JSON."
+    system_prompt = "你是專業的採購助理。你的任務是將詢價單轉換為結構化 JSON 資料。"
     
-    # 【關鍵修正】寫入你的 10mm 黃金法則 + Block 歸類
+    # 【關鍵修正】使用全中文 Prompt，加強厚度判斷邏輯
     user_prompt = (
-        f"Analyze this RFQ text:\n{text}\n\n"
-        f"Valid materials: {material_opts}\n"
-        f"Valid forms: {form_opts}\n\n"
-        f"*** CRITICAL RULES ***\n"
-        f"1. **Thickness Logic**: Identify dimensions. Find the SMALLEST dimension as 'Thickness'.\n"
-        f"   - If Thickness >= 10mm, set form to 'Plate'.\n"
-        f"   - If Thickness < 10mm, set form to 'Sheet'.\n"
-        f"2. **Block Rule**: If item is 'Block' or 'Cuboid' (3D), treat it as 'Plate'.\n"
-        f"3. **Material**: '316L' is 'Stainless Steel'.\n"
-        f"4. **Format**: Return ONLY a JSON object with a root key 'items'. NO markdown, NO comments.\n"
+        f"請分析以下詢價內容 (RFQ text)：\n{text}\n\n"
+        f"合法材料 (Valid materials): {material_opts}\n"
+        f"合法形狀 (Valid forms): {form_opts}\n\n"
+        f"*** 判斷邏輯 (CRITICAL RULES) ***\n"
+        f"1. **厚度判斷 (Thickness Logic)**: 找出尺寸中最小的數值視為「厚度」。\n"
+        f"   - 若厚度 >= 10mm，形狀設為 'Plate'。\n"
+        f"   - 若厚度 < 10mm，形狀設為 'Sheet'。\n"
+        f"2. **塊狀規則 (Block Rule)**: 若品項描述為 'Block'、'Cuboid' 或長方體，請歸類為 'Plate'。\n"
+        f"3. **材料對照**: '316L' 對應 'Stainless Steel'。\n"
+        f"4. **輸出格式**: 僅回傳 JSON 物件，根節點為 'items'。欄位值必須使用上述提供的**英文**選項。\n"
     )
 
     try:
@@ -60,14 +60,15 @@ def analyze_rfq(text):
         
         final_items = []
         for raw_item in items:
-            # 確保 AI 判斷的 Form 有被保留 (這裡會是 Plate 或 Sheet)
+            # 確保 AI 判斷的 Form 有被保留
             ai_form = raw_item.get("form", raw_item.get("form_type", "Other"))
             
             cleaned = {
                 "item_index": raw_item.get("item_index", 0),
                 "confidence": raw_item.get("confidence", 0.9),
                 "spec": raw_item.get("spec", raw_item),
-                "material_type": raw_item.get("material_type", "Other"),
+                # 這裡會優先抓取 AI 分析出的英文代碼，若無則為 Other
+                "material_type": raw_item.get("material_type", raw_item.get("material", "Other")),
                 "form": ai_form 
             }
             final_items.append(cleaned)
