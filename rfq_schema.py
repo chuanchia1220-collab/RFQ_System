@@ -16,58 +16,37 @@ RFQ_SCHEMA = {
           "form",
           "dimensions",
           "quantity",
+          "qualification",  # 新增認證要求
           "notes"
         ],
         "properties": {
           "material_type": {
             "type": "string",
-            "description": "Must match the system's material list exactly.",
-            "enum": [
-              "Aluminum",
-              "Copper",
-              "Carbon Steel",
-              "Stainless Steel",
-              "Tool Steel",
-              "Nickel Alloy",
-              "Titanium Alloy",
-              "Plastic",
-              "Other"
-            ]
+            "enum": ["Aluminum", "Copper", "Carbon Steel", "Stainless Steel", "Tool Steel", "Nickel Alloy", "Titanium Alloy", "Plastic", "Other"]
           },
           "material_spec": {
             "type": "string",
-            "minLength": 1,
-            "description": "The raw material specification string, e.g. '316L'."
+            "minLength": 1
           },
           "form": {
             "type": "string",
-            "enum": [
-              "Bar",
-              "Tube",
-              "Sheet",
-              "Plate",
-              "Forging",
-              "Stamping",
-              "Other"
-            ]
+            "enum": ["Bar", "Tube", "Sheet", "Plate", "Forging", "Stamping", "Other"]
           },
           "dimensions": {
             "type": "string",
-            "minLength": 1,
-            "description": "Original dimension string, preserving symbols and order."
+            "minLength": 1
           },
           "quantity": {
             "type": "string",
-            "description": "Number followed by unit. e.g. '10 pcs'.",
-            # Regex 解釋：
-            # ^[0-9.,]+ : 開頭必須是數字、點或逗號
-            # \s* : 允許中間有空白
-            # [a-zA-Z]+$: 結尾必須是英文單位
-            "pattern": "^[0-9.,]+\\s*[a-zA-Z]+$"
+            "pattern": "^[0-9.,]+\\\\s*[a-zA-Z]+$"
+          },
+          "qualification": {
+            "type": "string",
+            "enum": ["ISO", "Automotive", "Aerospace"],
+            "description": "ISO is default. Automotive if IATF 16949 is mentioned. Aerospace if AS9100/NADCAP is mentioned."
           },
           "notes": {
-            "type": "string",
-            "description": "Inference logic, assumptions, or raw constraints."
+            "type": "string"
           }
         },
         "additionalProperties": False
