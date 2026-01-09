@@ -1,0 +1,12 @@
+# UI 介面框架
+flet>=0.21.0
+
+# AI 大腦 (需 1.0.0 以上版本才支援新版 Client 語法)
+openai>=1.0.0
+
+# 資料結構驗證 (本次新增的守門員)
+jsonschema>=4.0.0
+pydantic>=2.0.0
+
+# Windows Outlook 自動化驅動 (非 Windows 環境安裝可能會略過或報錯，可視情況註解)
+pywin32>=306; sys_platform == 'win32'
