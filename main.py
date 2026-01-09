@@ -289,7 +289,7 @@ class TemplateManager(ft.Column):
         database.delete_template(t_id)
         self.load_data()
 
-# --- 詢價解析組件 (應用修改：輸入框放大 + 認證過濾) ---
+# --- 詢價解析組件 (應用修改：輸入框放大 + 認證過濾 + UI版面調整) ---
 class RFQAnalyzer(ft.Column):
     def __init__(self, page: ft.Page, lang="zh"):
         super().__init__(expand=True, scroll=ft.ScrollMode.AUTO)
@@ -299,20 +299,21 @@ class RFQAnalyzer(ft.Column):
         self.opt_trans = OPTION_TRANSLATIONS.get(lang, {})
         self.analyzed_items = []
 
-        # 修改 1: 放大輸入框
+        # 修改: 橫向滿版 (width=float("inf"))
         self.input_text = ft.TextField(
             multiline=True, 
-            min_lines=20,     # 高度加倍 (原為 10)
-            text_size=14,     # 字體微調
-            label="貼上詢價 Email 內容"
-            # 移除 expand=False，使其自然填滿
+            min_lines=20,     
+            text_size=14,     
+            label="貼上詢價 Email 內容",
+            width=float("inf") # 強制水平滿版
         )
         self.analyze_btn = ft.Button("開始解析", icon=ft.Icons.ANALYTICS, on_click=self.run_analysis)
         self.results_container = ft.Column()
 
         self.controls = [
-            ft.Text(self.t["rfq_analysis"], size=30),
-            ft.Divider(),
+            # 修改: 標題縮小，分隔線高度縮小 (Header最小化)
+            ft.Text(self.t["rfq_analysis"], size=20, weight=ft.FontWeight.BOLD), 
+            ft.Divider(height=10, thickness=1),
             self.input_text,
             ft.Row([self.analyze_btn], alignment=ft.MainAxisAlignment.END),
             ft.Divider(),
@@ -342,8 +343,7 @@ class RFQAnalyzer(ft.Column):
                  return
             
             for mat_type, group_items_list in grouped_items.items():
-                # 修改 2: 加入認證類別篩選邏輯
-                # 2.1 判定此群組最高認證需求 (Aerospace > Automotive > ISO)
+                # 認證類別篩選邏輯
                 req_qual = "ISO"
                 for it in group_items_list:
                     q = it.get("qualification", "ISO")
@@ -352,14 +352,11 @@ class RFQAnalyzer(ft.Column):
                     elif q == "Automotive" and req_qual == "ISO": 
                         req_qual = "Automotive"
 
-                # 2.2 先取得材質匹配的供應商
                 initial_suppliers = database.search_suppliers([mat_type], [])
                 
-                # 2.3 再根據認證進行過濾
                 matched_suppliers = []
                 for s in initial_suppliers:
-                    s_quals = from_json_str(s[8]) # Index 8 為 qualifications
-                    # 供應商必須具備需求等級的認證
+                    s_quals = from_json_str(s[8])
                     if req_qual in s_quals:
                         matched_suppliers.append(s)
 
@@ -368,7 +365,6 @@ class RFQAnalyzer(ft.Column):
                 ui_rows_data = [] 
                 data_rows = []
                 for idx, item in enumerate(group_items_list):
-                    # 儲存到 DB (注意：matched_suppliers 存的是過濾後的名單)
                     database.save_rfq_item(req_id, idx, mat_type, item.get("form", "Other"), json.dumps(item), [s[0] for s in matched_suppliers])
                     
                     txt_spec = ft.TextField(value=item.get("material_spec", "-"), border=ft.InputBorder.UNDERLINE, dense=True, text_size=13, expand=True)
@@ -378,7 +374,6 @@ class RFQAnalyzer(ft.Column):
                     txt_notes = ft.TextField(value=item.get("notes", "-"), border=ft.InputBorder.UNDERLINE, dense=True, text_size=13, expand=True)
                     txt_moq = ft.TextField(value="", border=ft.InputBorder.UNDERLINE, dense=True, text_size=13, width=80, hint_text="if need")
                     
-                    # 傳遞 qual 資訊以便 Email 使用
                     ui_rows_data.append({
                         "mat_type": mat_type, 
                         "spec": txt_spec, 
@@ -390,9 +385,7 @@ class RFQAnalyzer(ft.Column):
                         "qual": item.get("qualification", "ISO")
                     })
                     
-                    # UI 顯示增加「判定認證」資訊
                     qual_display = item.get("qualification", "ISO")
-                    # 使用 Tooltip 或括號顯示認證
                     mat_display = ft.Column([
                         ft.Text(str(idx + 1)),
                         ft.Container(
@@ -403,7 +396,7 @@ class RFQAnalyzer(ft.Column):
                     ], spacing=2)
 
                     data_rows.append(ft.DataRow(cells=[
-                        ft.DataCell(mat_display), # 顯示序號與認證標籤
+                        ft.DataCell(mat_display),
                         ft.DataCell(txt_spec), 
                         ft.DataCell(txt_form), 
                         ft.DataCell(txt_dims), 
@@ -496,8 +489,7 @@ class RFQAnalyzer(ft.Column):
 # --- 主程式 ---
 def main(page: ft.Page):
     database.init_db()
-    # 修改 3: 調整視窗大小為 1400x950
-    page.title = "RFQ System v1.8 (Final Tweaks)"
+    page.title = "RFQ System v1.8 (UI Fixes)"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.window_width, page.window_height = 1400, 950 
 
@@ -506,14 +498,15 @@ def main(page: ft.Page):
     rfq_analyzer = RFQAnalyzer(page, current_lang)
     template_manager = TemplateManager(page)
     
-    content_area = ft.Container(content=supplier_manager, expand=True, padding=20)
+    # 修改: 減少 Top Padding (從 20 改為 10)，讓 Header 區域更緊湊
+    content_area = ft.Container(content=supplier_manager, expand=True, padding=ft.padding.only(left=20, top=10, right=20, bottom=20))
 
     def on_nav_change(e):
         index = e.control.selected_index
         content_area.content = None
         if index == 0:
             content_area.content = supplier_manager
-            supplier_manager.load_data()           
+            supplier_manager.load_data()            
         elif index == 1:
             content_area.content = rfq_analyzer
         elif index == 2:
