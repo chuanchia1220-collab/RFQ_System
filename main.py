@@ -349,20 +349,44 @@ class RFQAnalyzer(ft.Column):
                 matched_suppliers = database.search_suppliers([mat_type], [])
                 supplier_options = [ft.dropdown.Option(str(s[0]), f"{s[1]} ({s[2]})") for s in matched_suppliers]
                 
-                # 建立顯示表格
+                # --- 關鍵修正：建立可編輯的輸入框列表 ---
+                # 我們不只建立 UI，還要把這些輸入框物件存起來 (ui_rows_data)
+                # 結構: [ {"mat_type": str, "spec": TextField, "form": TextField, ...}, ... ]
+                
+                ui_rows_data = [] 
                 data_rows = []
+
                 for idx, item in enumerate(group_items_list):
+                    # 儲存單項結果到 DB (保留個別紀錄)
                     matched_ids = [s[0] for s in matched_suppliers]
                     database.save_rfq_item(req_id, idx, mat_type, item.get("form", "Other"), json.dumps(item), matched_ids)
                     
+                    # 建立輸入框 (預設值為 AI 解析結果)
+                    # 樣式：緊湊模式 (dense)，無邊框或底線邊框，讓它看起來像表格
+                    txt_spec = ft.TextField(value=item.get("material_spec", "-"), border=ft.InputBorder.UNDERLINE, dense=True, text_size=13, expand=True)
+                    txt_form = ft.TextField(value=item.get("form", "-"), border=ft.InputBorder.UNDERLINE, dense=True, text_size=13, width=80)
+                    txt_dims = ft.TextField(value=item.get("dimensions", "-"), border=ft.InputBorder.UNDERLINE, dense=True, text_size=13, expand=True)
+                    txt_qty = ft.TextField(value=item.get("quantity", "-"), border=ft.InputBorder.UNDERLINE, dense=True, text_size=13, width=80)
+                    txt_notes = ft.TextField(value=item.get("notes", "-"), border=ft.InputBorder.UNDERLINE, dense=True, text_size=13, expand=True)
+
+                    # 將這一列的控制項存起來，給按鈕使用
+                    ui_rows_data.append({
+                        "mat_type": mat_type, # 材質大類通常不改，但如果真要改，邏輯會變複雜，暫時以此組為準
+                        "spec": txt_spec,
+                        "form": txt_form,
+                        "dimensions": txt_dims,
+                        "quantity": txt_qty,
+                        "notes": txt_notes
+                    })
+
                     data_rows.append(
                         ft.DataRow(cells=[
                             ft.DataCell(ft.Text(str(idx + 1))),
-                            ft.DataCell(ft.Text(item.get("material_spec", "-"))),
-                            ft.DataCell(ft.Text(item.get("form", "-"))),
-                            ft.DataCell(ft.Text(item.get("dimensions", "-"))),
-                            ft.DataCell(ft.Text(item.get("quantity", "-"))),
-                            ft.DataCell(ft.Text(item.get("notes", "-"))),
+                            ft.DataCell(txt_spec),
+                            ft.DataCell(txt_form),
+                            ft.DataCell(txt_dims),
+                            ft.DataCell(txt_qty),
+                            ft.DataCell(txt_notes),
                         ])
                     )
 
@@ -379,19 +403,22 @@ class RFQAnalyzer(ft.Column):
                     border=ft.border.all(1, ft.Colors.GREY_300),
                     vertical_lines=ft.border.all(1, ft.Colors.GREY_200),
                     horizontal_lines=ft.border.all(1, ft.Colors.GREY_200),
+                    data_row_min_height=40,
+                    data_row_max_height=60,
                 )
 
                 # 4個供應商下拉選單
-                supp_dd1 = ft.Dropdown(label="供應商 1", options=supplier_options, width=200)
-                supp_dd2 = ft.Dropdown(label="供應商 2", options=supplier_options, width=200)
-                supp_dd3 = ft.Dropdown(label="供應商 3", options=supplier_options, width=200)
-                supp_dd4 = ft.Dropdown(label="供應商 4", options=supplier_options, width=200) # 新增
+                supp_dd1 = ft.Dropdown(label="供應商 1", options=supplier_options, width=200, dense=True)
+                supp_dd2 = ft.Dropdown(label="供應商 2", options=supplier_options, width=200, dense=True)
+                supp_dd3 = ft.Dropdown(label="供應商 3", options=supplier_options, width=200, dense=True)
+                supp_dd4 = ft.Dropdown(label="供應商 4", options=supplier_options, width=200, dense=True)
 
-                # 批次生成按鈕 (傳入 4 個 dropdown)
+                # 批次生成按鈕 (傳入 ui_rows_data 而非原始 items)
+                # 這樣才能讀取到使用者修改後的值
                 batch_draft_btn = ft.Button(
                     "生成草稿 (批次)",
                     icon=ft.Icons.EMAIL,
-                    on_click=lambda e, items=group_items_list, dds=[supp_dd1, supp_dd2, supp_dd3, supp_dd4]: self.generate_batch_drafts(items, dds)
+                    on_click=lambda e, rows=ui_rows_data, dds=[supp_dd1, supp_dd2, supp_dd3, supp_dd4]: self.generate_batch_drafts(rows, dds)
                 )
 
                 card = ft.Card(
@@ -427,8 +454,9 @@ class RFQAnalyzer(ft.Column):
         self.analyze_btn.disabled = False
         self.analyze_btn.text = "開始解析"
 
-    def generate_batch_drafts(self, items_list, dropdowns):
-        print("\n[Draft] 開始批次生成草稿...")
+    # --- 修正：讀取 UI 輸入框數值的生成邏輯 ---
+    def generate_batch_drafts(self, ui_rows, dropdowns):
+        print("\n[Draft] 開始批次生成草稿 (讀取手動修改數據)...")
         
         # 收集被選中的供應商 ID
         selected_ids = [dd.value for dd in dropdowns if dd.value]
@@ -445,21 +473,34 @@ class RFQAnalyzer(ft.Column):
         templates = database.get_templates()
         template = templates[0] if templates else (0, "Default", "Inquiry {date}", "<p>Hi,</p>", "<p>Thanks</p>")
         
-        # 表格 HTML
+        # 1. 從 UI 輸入框讀取最新數據
+        # ui_rows 是包含 TextField 的字典列表
+        current_items_data = []
+        for row in ui_rows:
+            current_items_data.append({
+                "material_type": row["mat_type"],
+                "material_spec": row["spec"].value, # 讀取 TextField 的 .value
+                "form": row["form"].value,
+                "dimensions": row["dimensions"].value,
+                "quantity": row["quantity"].value,
+                "notes": row["notes"].value
+            })
+
+        # 2. 建立 HTML 表格內容
         table_style = "border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 13px;"
         th_style = "border: 1px solid #333; padding: 10px; background-color: #eee; text-align: left;"
         td_style = "border: 1px solid #333; padding: 10px;"
         
         table_rows_html = ""
-        for item in items_list:
+        for item in current_items_data:
             table_rows_html += f"""
             <tr>
-                <td style='{td_style}'>{item.get('material_type', '-')}</td>
-                <td style='{td_style}'>{item.get('material_spec', '-')}</td>
-                <td style='{td_style}'>{item.get('form', '-')}</td>
-                <td style='{td_style}'>{item.get('dimensions', '-')}</td>
-                <td style='{td_style}'>{item.get('quantity', '-')}</td>
-                <td style='{td_style}'>{item.get('notes', '-')}</td>
+                <td style='{td_style}'>{item['material_type']}</td>
+                <td style='{td_style}'>{item['material_spec']}</td>
+                <td style='{td_style}'>{item['form']}</td>
+                <td style='{td_style}'>{item['dimensions']}</td>
+                <td style='{td_style}'>{item['quantity']}</td>
+                <td style='{td_style}'>{item['notes']}</td>
             </tr>
             """
         
@@ -519,7 +560,7 @@ class RFQAnalyzer(ft.Column):
 # --- 主程式 ---
 def main(page: ft.Page):
     database.init_db()
-    page.title = "RFQ System v1.3 (Batch 4)"
+    page.title = "RFQ System v1.4 (Editable UI)"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.window_width, page.window_height = 1200, 800
 
