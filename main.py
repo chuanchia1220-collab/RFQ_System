@@ -58,7 +58,7 @@ class SupplierManager(ft.Column):
         )
         self.main_page.overlay.append(self.dialog)
 
-        # 3. UI 佈局 (修正：ElevatedButton -> Button)
+        # 3. UI 佈局
         self.data_table = ft.DataTable(
             columns=[ft.DataColumn(ft.Text(self.t[k])) for k in ["name", "contact", "phone", "materials", "forms", "qualifications", "actions"]],
             rows=[]
@@ -335,6 +335,7 @@ class RFQAnalyzer(ft.Column):
             self.results_container.controls = []
 
             for item in self.analyzed_items:
+                # 取得 AI 解析結果
                 mat_type = item.get("material_type", "Other")
                 form_type = item.get("form", "Other")
                 spec = item.get("spec", {})
@@ -364,7 +365,6 @@ class RFQAnalyzer(ft.Column):
                         padding=10,
                         content=ft.Column([
                             ft.ListTile(
-                                # 修正：ft.colors -> ft.Colors (大寫)
                                 leading=ft.Icon(ft.Icons.CIRCLE, color=ft.Colors.GREEN if item.get("confidence", 0) > 0.6 else ft.Colors.RED),
                                 title=ft.Text(f"{mat_type} - {form_type}"),
                                 subtitle=ft.Text(spec_text),
@@ -394,8 +394,10 @@ class RFQAnalyzer(ft.Column):
         self.analyze_btn.text = "開始解析"
 
     def generate_draft(self, supplier_dropdown, item):
+        print("\n[Draft] 開始執行草稿生成...")
         supplier_id = supplier_dropdown.value
         if not supplier_id:
+            print("[Draft] 錯誤: 未選擇供應商")
             self.main_page.snack_bar = ft.SnackBar(ft.Text("請先選擇供應商"))
             self.main_page.snack_bar.open = True
             self.main_page.update()
@@ -403,28 +405,49 @@ class RFQAnalyzer(ft.Column):
         
         suppliers = database.get_suppliers()
         supplier = next((s for s in suppliers if str(s[0]) == str(supplier_id)), None)
+        
+        # 讀取樣板 (若無則使用預設)
         templates = database.get_templates()
-        template = templates[0] if templates else (0, "Default", "Inquiry {date}", "<p>Hi,</p>", "<p>Thanks</p>")
+        if templates:
+            # 樣板結構: (id, name, subject_fmt, preamble, closing, ...)
+            template = templates[0]
+            subj_fmt = template[2]
+            preamble = template[3]
+            closing = template[4]
+        else:
+            subj_fmt = "Inquiry {date}"
+            preamble = "<p>Hi,</p>"
+            closing = "<p>Thanks</p>"
 
-        subject = template[2].format(date=datetime.now().strftime("%Y%m%d")) + f"_{supplier[1]}"
+        subject = subj_fmt.format(date=datetime.now().strftime("%Y%m%d")) + f"_{supplier[1]}"
         
         try:
             if os.name == 'nt':
+                print("[Draft] 嘗試呼叫 Outlook (win32com)...")
                 import win32com.client
                 outlook = win32com.client.Dispatch('Outlook.Application')
                 mail = outlook.CreateItem(0)
                 mail.Subject = subject
-                mail.HTMLBody = f"{template[3]}<br>Item: {item['material_type']} {item['form']}<br>Spec: {item['spec']}<br>{template[4]}"
+                mail.HTMLBody = f"{preamble}<br><b>Item:</b> {item['material_type']} {item['form']}<br><b>Spec:</b> {item['spec']}<br>{closing}"
                 mail.To = supplier[3]
                 mail.Save()
-                msg = "Outlook 草稿已建立"
+                print("[Draft] 成功: 草稿已儲存至 Drafts")
+                msg = "Outlook 草稿已建立，請至『草稿匣』查看"
             else:
-                msg = f"已模擬建立草稿給 {supplier[1]}"
+                msg = f"非 Windows 環境: 模擬建立草稿給 {supplier[1]}"
+            
             self.main_page.snack_bar = ft.SnackBar(ft.Text(msg))
             self.main_page.snack_bar.open = True
+            
+        except ImportError:
+            print("[Draft] 錯誤: 缺少 win32com 模組")
+            self.main_page.snack_bar = ft.SnackBar(ft.Text("錯誤：請執行 'pip install pywin32' 安裝 Outlook 驅動"))
+            self.main_page.snack_bar.open = True
         except Exception as ex:
+            print(f"[Draft] 未知錯誤: {ex}")
             self.main_page.snack_bar = ft.SnackBar(ft.Text(f"草稿建立失敗: {str(ex)}"))
             self.main_page.snack_bar.open = True
+            
         self.main_page.update()
 
 # --- 主程式 ---
@@ -446,7 +469,6 @@ def main(page: ft.Page):
     def on_nav_change(e):
         index = e.control.selected_index
         content_area.content = None
-        # 修正：掛載順序必須先賦值給 content_area.content，再執行 load_data()
         if index == 0:
             content_area.content = supplier_manager
             supplier_manager.load_data()           
@@ -477,5 +499,4 @@ def main(page: ft.Page):
     supplier_manager.load_data()
 
 if __name__ == "__main__":
-    # 修正：ft.app(target=main) 已棄用
     ft.app(main)
