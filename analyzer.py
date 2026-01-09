@@ -35,8 +35,12 @@ def analyze_rfq(text):
         elif "```" in content: content = content.split("```")[1].split("```")[0].strip()
 
         result = json.loads(content)
-        # 確保回傳 items 鍵值以符合 main.py 需求
-        return result if "items" in result else {"items": []}
+
+        # 確保 'items' 鍵值存在，以符合 main.py 的需求
+        if "items" not in result:
+            result["items"] = []
+
+        return result # 確保這裡回傳的是包含 items 的完整字典
     except Exception as e:
-        print(f"AI 解析錯誤: {e}")
+        print(f"Error analyzing RFQ: {e}")
         return {"items": []}
