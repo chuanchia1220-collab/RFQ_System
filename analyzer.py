@@ -1,7 +1,7 @@
 import os
 import json
 import openai
-from config import OPTIONS, OPTION_TRANSLATIONS # 多匯入 OPTION_TRANSLATIONS
+from config import OPTIONS, OPTION_TRANSLATIONS
 
 def analyze_rfq(text):
     print(f"\n[AI] 收到解析請求，長度: {len(text)}")
@@ -12,10 +12,8 @@ def analyze_rfq(text):
 
     client = openai.OpenAI(api_key=api_key)
 
-    # 【關鍵改良】動態生成「英文 (中文)」對照表給 AI 參考
-    # 讓 AI 知道 "白鐵" = "Stainless Steel", "鋁" = "Aluminum"
+    # 動態生成中英對照
     trans_map = OPTION_TRANSLATIONS.get("zh", {})
-    
     material_opts_list = [f"{m} ({trans_map.get(m, m)})" for m in OPTIONS["material_types"]]
     form_opts_list = [f"{f} ({trans_map.get(f, f)})" for f in OPTIONS["form_types"]]
     
@@ -24,7 +22,7 @@ def analyze_rfq(text):
 
     system_prompt = "你是專業的採購助理。你的任務是將詢價單轉換為結構化 JSON 資料。"
     
-    # 提示詞中加入這些中英對照資訊
+    # 【關鍵修正】加入多數量 (quantities) 的提取邏輯
     user_prompt = (
         f"請分析以下詢價內容 (RFQ text)：\n{text}\n\n"
         f"合法材料選項 (Valid materials): {material_opts}\n"
@@ -35,9 +33,12 @@ def analyze_rfq(text):
         f"   - 若厚度 < 10mm，形狀設為 'Sheet'。\n"
         f"2. **塊狀規則**: 若品項描述為 'Block'、'Cuboid'，請歸類為 'Plate'。\n"
         f"3. **材料對照**: '316L' 屬於 'Stainless Steel'。\n"
-        f"4. **輸出格式**: \n"
+        f"4. **數量邏輯 (Quantity)**: 若同一品項有多個詢價數量 (例如 10pcs 和 2000pcs)，請提取為陣列。\n"
+        f"   - 欄位名稱必須為 'quantities' (Array of integers/strings)。\n"
+        f"5. **輸出格式**: \n"
         f"   - 僅回傳 JSON 物件，根節點為 'items'。\n"
-        f"   - 【重要】欄位值必須只回傳「英文代碼」（例如只回傳 'Aluminum'，不要回傳 'Aluminum (鋁)'）。\n"
+        f"   - 每個 item 需包含 'quantities' 欄位。\n"
+        f"   - 欄位值必須只回傳「英文代碼」。\n"
     )
 
     try:
@@ -69,12 +70,18 @@ def analyze_rfq(text):
         for raw_item in items:
             ai_form = raw_item.get("form", raw_item.get("form_type", "Other"))
             
+            # 確保 quantities 是個列表
+            qty = raw_item.get("quantities", raw_item.get("quantity", []))
+            if not isinstance(qty, list):
+                qty = [qty] if qty else []
+
             cleaned = {
                 "item_index": raw_item.get("item_index", 0),
                 "confidence": raw_item.get("confidence", 0.9),
                 "spec": raw_item.get("spec", raw_item),
                 "material_type": raw_item.get("material_type", raw_item.get("material", "Other")),
-                "form": ai_form 
+                "form": ai_form,
+                "quantities": qty # 這裡會儲存 [10, 2000]
             }
             final_items.append(cleaned)
 
