@@ -1,64 +1,73 @@
 import os
 import json
 import openai
-from pydantic import BaseModel, Field
-from typing import List, Literal
-from config import OPTIONS
-
-# 1. 定義資料模型 (解決缺口 4, 5: JSON Schema + Sanity Check)
-class RFQItem(BaseModel):
-    material_type: Literal[
-        "Aluminum", "Copper", "Carbon Steel", "Stainless Steel", 
-        "Tool Steel", "Nickel Alloy", "Titanium Alloy", "Plastic", "Other"
-    ] = Field(description="If unsure, use 'Other'")
-    material_spec: str = Field(description="Original material name, e.g., '316L'")
-    form: Literal["Bar", "Tube", "Sheet", "Plate", "Forging", "Stamping", "Other"]
-    dimensions: str = Field(description="Preserve original textual format exactly.")
-    quantity: str = Field(description="Must include numeric value AND unit.")
-    notes: str = Field(description="Assumptions, constraints, or fallback reasons.")
-
-class RFQResponse(BaseModel):
-    items: List[RFQItem]
+from jsonschema import validate, ValidationError
+from config import OPTIONS, OPTION_TRANSLATIONS
+from rfq_schema import RFQ_SCHEMA  # 匯入憲法
 
 def analyze_rfq(text):
+    print(f"\n[AI] 收到解析請求，長度: {len(text)}")
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        print("[錯誤] 找不到 OPENAI_API_KEY")
+        print("[AI 錯誤] 找不到 OPENAI_API_KEY")
         return {"items": []}
 
     client = openai.OpenAI(api_key=api_key)
     
-    # 2. 強化 Prompt (解決缺口 1, 2, 3)
-    system_prompt = """You are a senior procurement analyst. 
-Your task is to normalize RFQ text into a strict structure for supplier quotation emails."""
+    # 動態生成 Prompt 的輔助資訊
+    trans_map = OPTION_TRANSLATIONS.get("zh", {})
+    material_opts = ", ".join([f"{m}({trans_map.get(m, m)})" for m in OPTIONS["material_types"]])
+    form_opts = ", ".join([f"{f}({trans_map.get(f, f)})" for f in OPTIONS["form_types"]])
 
-    user_prompt = f"""Analyze the following RFQ text:
-\"\"\"{text}\"\"\"
+    system_prompt = "You are a senior procurement analyst. Your task is to normalize RFQ text into a strict JSON structure validated by a schema."
 
-CRITICAL RULES:
-1. FIELD DISCIPLINE: All fields are MANDATORY. Never omit dimensions or quantity.
-2. FALLBACK LOGIC: If a value does not match the allowed list, you MUST use "Other" and explain why in 'notes'.
-3. DIMENSION PRESERVATION: Dimensions MUST preserve the original textual format (symbols, order). Do NOT normalize or reorder.
-4. QUANTITY SPLITTING: Create one item per quantity tier.
-5. THICKNESS LOGIC: Minimum dimension >= 10mm or "block/塊材" -> "Plate", else "Sheet".
-6. MATERIAL MAPPING: "316L" -> "Stainless Steel"."""
+    user_prompt = (
+        f"Analyze the following RFQ text:\n\"\"\"{text}\"\"\"\n\n"
+        f"*** STRICT RULES (Follow these or validation will fail) ***\n"
+        f"1. **MANDATORY FIELDS**: 'material_type', 'material_spec', 'form', 'dimensions', 'quantity', 'notes'. NEVER omit any.\n"
+        f"2. **QUANTITY SPLITTING**: One item per quantity tier. Quantity MUST include unit (e.g., '10 pcs', not just '10').\n"
+        f"3. **THICKNESS LOGIC**: If smallest dimension >= 10mm or text mentions 'block', use 'Plate'. Else 'Sheet'.\n"
+        f"4. **DIMENSION PRESERVATION**: Keep original string format exactly (e.g., '30mm*30mm*40mm').\n"
+        f"5. **VALID VALUES ONLY**: \n"
+        f"   - Materials: {material_opts}\n"
+        f"   - Forms: {form_opts}\n"
+        f"   - If unsure, map to 'Other' and explain in notes.\n"
+        f"6. **MATERIAL MAPPING**: '316L' -> 'Stainless Steel'.\n\n"
+        f"Return ONLY a valid JSON object matching the schema."
+    )
 
     try:
-        # 使用最新 beta.chat.completions.parse 確保 100% 符合 Schema
-        completion = client.beta.chat.completions.parse(
-            model="gpt-4o",  # 採用 4o 級別模型
+        response = client.chat.completions.create(
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            response_format=RFQResponse,
-            temperature=0
+            temperature=0,
+            response_format={"type": "json_object"}
         )
         
-        # 3. 程式碼驗證 (自動執行 Sanity Check)
-        result = completion.choices[0].message.parsed
-        return result.model_dump()
+        content = response.choices[0].message.content.strip()
+        raw_data = json.loads(content)
 
+        # 🔒 關鍵步驟：Schema 執法
+        print("[AI] 正在進行 Schema 結構驗證...")
+        validate(instance=raw_data, schema=RFQ_SCHEMA)
+        print("[AI] 驗證通過，資料結構完美。")
+
+        return raw_data
+
+    except ValidationError as ve:
+        # 這裡會抓到 AI 偷懶的證據 (例如 quantity 沒單位，或 form 亂寫)
+        print(f"[Schema 違規] AI 輸出不符合契約: {ve.message}")
+        print(f"[違規資料片段] {ve.instance}")
+        # 實務上這裡可以做 retry，但在 v1.0我們先回傳空陣列避免報錯
+        return {"items": []}
+
+    except json.JSONDecodeError:
+        print("[AI 錯誤] JSON 格式損壞")
+        return {"items": []}
+        
     except Exception as e:
-        print(f"[架構崩潰] AI 輸出不符合合約: {e}")
+        print(f"[AI 系統錯誤] {e}")
         return {"items": []}
