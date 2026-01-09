@@ -16,7 +16,7 @@ def from_json_str(json_str):
     except:
         return []
 
-# --- 供應商管理組件 (保持不變) ---
+# --- 供應商管理組件 (SupplierManager) ---
 class SupplierManager(ft.Column):
     def __init__(self, page: ft.Page, lang="zh"):
         super().__init__(expand=True)
@@ -171,7 +171,7 @@ class SupplierManager(ft.Column):
         database.delete_supplier(s_id)
         self.load_data()
 
-# --- 樣板管理組件 (保持不變) ---
+# --- 樣板管理組件 (TemplateManager) ---
 class TemplateManager(ft.Column):
     def __init__(self, page: ft.Page):
         super().__init__(expand=True)
@@ -278,7 +278,7 @@ class TemplateManager(ft.Column):
         database.delete_template(t_id)
         self.load_data()
 
-# --- 詢價解析組件 ---
+# --- 詢價解析組件 (RFQAnalyzer) ---
 class RFQAnalyzer(ft.Column):
     def __init__(self, page: ft.Page, lang="zh"):
         super().__init__(expand=True)
@@ -320,17 +320,16 @@ class RFQAnalyzer(ft.Column):
         self.main_page.update()
 
         try:
-            # 1. 呼叫 AI 解析
+            # 1. 解析
             analysis_result = analyzer.analyze_rfq(self.input_text.value)
             all_items = analysis_result.get("items", [])
             
-            # 儲存請求紀錄
+            # 儲存紀錄
             req_id = database.save_rfq_request(self.input_text.value, json.dumps(all_items))
 
             self.results_container.controls = []
 
-            # 2. 進行材質分組 (Grouping)
-            # 結構: grouped_items = { "Stainless Steel": [item1, item2], "Aluminum": [item3] }
+            # 2. 分組
             grouped_items = {}
             for item in all_items:
                 mat_type = item.get("material_type", "Other")
@@ -343,23 +342,19 @@ class RFQAnalyzer(ft.Column):
                  self.main_page.snack_bar.open = True
                  return
 
-            # 3. 針對每一組材質生成 UI 卡片
+            # 3. 渲染
             for mat_type, group_items_list in grouped_items.items():
                 print(f"[UI 階段 3] 正在處理分組: {mat_type}, 共 {len(group_items_list)} 個項目")
                 
-                # 搜尋供應商 (以該材質為準)
-                # 注意：這裡搜尋的是只要有支援該材質的供應商即可
                 matched_suppliers = database.search_suppliers([mat_type], [])
                 supplier_options = [ft.dropdown.Option(str(s[0]), f"{s[1]} ({s[2]})") for s in matched_suppliers]
                 
-                # 建立顯示表格 (DataTable)
+                # 建立顯示表格
                 data_rows = []
                 for idx, item in enumerate(group_items_list):
-                    # 儲存單項結果到 DB (保留個別紀錄)
                     matched_ids = [s[0] for s in matched_suppliers]
                     database.save_rfq_item(req_id, idx, mat_type, item.get("form", "Other"), json.dumps(item), matched_ids)
                     
-                    # 建立表格列
                     data_rows.append(
                         ft.DataRow(cells=[
                             ft.DataCell(ft.Text(str(idx + 1))),
@@ -386,20 +381,19 @@ class RFQAnalyzer(ft.Column):
                     horizontal_lines=ft.border.all(1, ft.Colors.GREY_200),
                 )
 
-                # 建立 3 個供應商下拉選單
-                supp_dd1 = ft.Dropdown(label="供應商 1", options=supplier_options, width=250)
-                supp_dd2 = ft.Dropdown(label="供應商 2", options=supplier_options, width=250)
-                supp_dd3 = ft.Dropdown(label="供應商 3", options=supplier_options, width=250)
+                # 4個供應商下拉選單
+                supp_dd1 = ft.Dropdown(label="供應商 1", options=supplier_options, width=200)
+                supp_dd2 = ft.Dropdown(label="供應商 2", options=supplier_options, width=200)
+                supp_dd3 = ft.Dropdown(label="供應商 3", options=supplier_options, width=200)
+                supp_dd4 = ft.Dropdown(label="供應商 4", options=supplier_options, width=200) # 新增
 
-                # 建立整組的生成按鈕
-                # 注意：lambda 必須正確傳遞當前的 group_items_list 和這三個 dropdown
+                # 批次生成按鈕 (傳入 4 個 dropdown)
                 batch_draft_btn = ft.Button(
                     "生成草稿 (批次)",
                     icon=ft.Icons.EMAIL,
-                    on_click=lambda e, items=group_items_list, dds=[supp_dd1, supp_dd2, supp_dd3]: self.generate_batch_drafts(items, dds)
+                    on_click=lambda e, items=group_items_list, dds=[supp_dd1, supp_dd2, supp_dd3, supp_dd4]: self.generate_batch_drafts(items, dds)
                 )
 
-                # 組合卡片
                 card = ft.Card(
                     content=ft.Container(
                         padding=20,
@@ -411,8 +405,8 @@ class RFQAnalyzer(ft.Column):
                             ft.Divider(),
                             items_table,
                             ft.Divider(),
-                            ft.Text("選擇詢價對象 (最多 3 家):", weight=ft.FontWeight.BOLD),
-                            ft.Row([supp_dd1, supp_dd2, supp_dd3], wrap=True),
+                            ft.Text("選擇詢價對象 (最多 4 家):", weight=ft.FontWeight.BOLD),
+                            ft.Row([supp_dd1, supp_dd2, supp_dd3, supp_dd4], wrap=True),
                             ft.Row([batch_draft_btn], alignment=ft.MainAxisAlignment.END)
                         ])
                     )
@@ -433,11 +427,10 @@ class RFQAnalyzer(ft.Column):
         self.analyze_btn.disabled = False
         self.analyze_btn.text = "開始解析"
 
-    # --- 新增：批次草稿生成邏輯 ---
     def generate_batch_drafts(self, items_list, dropdowns):
         print("\n[Draft] 開始批次生成草稿...")
         
-        # 1. 收集被選中的供應商 ID (排除空值)
+        # 收集被選中的供應商 ID
         selected_ids = [dd.value for dd in dropdowns if dd.value]
         
         if not selected_ids:
@@ -446,14 +439,13 @@ class RFQAnalyzer(ft.Column):
             self.main_page.update()
             return
         
-        # 去除重複 (如果使用者選了兩次同一家)
         selected_ids = list(set(selected_ids))
         
         suppliers_db = database.get_suppliers()
         templates = database.get_templates()
         template = templates[0] if templates else (0, "Default", "Inquiry {date}", "<p>Hi,</p>", "<p>Thanks</p>")
         
-        # 2. 建立 HTML 表格內容 (這份表格對所有供應商都一樣)
+        # 表格 HTML
         table_style = "border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 13px;"
         th_style = "border: 1px solid #333; padding: 10px; background-color: #eee; text-align: left;"
         td_style = "border: 1px solid #333; padding: 10px;"
@@ -489,7 +481,7 @@ class RFQAnalyzer(ft.Column):
         </table>
         """
 
-        # 3. 迴圈生成郵件
+        # 生成郵件
         success_count = 0
         try:
             if os.name == 'nt':
@@ -497,7 +489,6 @@ class RFQAnalyzer(ft.Column):
                 outlook = win32com.client.Dispatch('Outlook.Application')
                 
                 for supp_id in selected_ids:
-                    # 找到供應商資料
                     supplier = next((s for s in suppliers_db if str(s[0]) == str(supp_id)), None)
                     if not supplier: continue
                     
@@ -528,7 +519,7 @@ class RFQAnalyzer(ft.Column):
 # --- 主程式 ---
 def main(page: ft.Page):
     database.init_db()
-    page.title = "RFQ System v1.2 (Batch)"
+    page.title = "RFQ System v1.3 (Batch 4)"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.window_width, page.window_height = 1200, 800
 
@@ -538,7 +529,6 @@ def main(page: ft.Page):
     rfq_analyzer = RFQAnalyzer(page, current_lang)
     template_manager = TemplateManager(page)
     
-    # 初始化顯示區域
     content_area = ft.Container(content=supplier_manager, expand=True, padding=20)
 
     def on_nav_change(e):
