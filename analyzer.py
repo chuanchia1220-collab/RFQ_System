@@ -45,6 +45,9 @@ def analyze_rfq(text):
         f"   - **PRESERVE KEYWORDS**: Keep material names, grades (e.g. 316L), and technical terms in their **ORIGINAL** language. \n"
         f"   - **DO NOT TRANSLATE** technical terms. Do not auto-correct them.\n"
         f"   - You may lightly format the text for readability, but do not alter the meaning or remove key details.\n"
+        f"   - **Default**: Set to 'ISO'.\n"
+        f"   - **Automotive**: If text mentions '汽車', '車用', 'IATF 16949', or 'IATF'.\n"
+        f"   - **Aerospace**: If text mentions '航太', '航空', 'Aerospace', 'AS9100', or 'NADCAP'.\n"
     )
 
     messages = [
