@@ -14,9 +14,14 @@ def analyze_rfq(text):
 
     client = openai.OpenAI(api_key=api_key)
     
+    # 1. 準備純英文的 Enum 清單 (給 Schema 驗證用)
+    pure_mat_opts = ", ".join(OPTIONS["material_types"])
+    pure_form_opts = ", ".join(OPTIONS["form_types"])
+
+    # 2. 準備中英對照表 (給 AI 理解用，但不作為 Output 標準)
     trans_map = OPTION_TRANSLATIONS.get("zh", {})
-    material_opts = ", ".join([f"{m}({trans_map.get(m, m)})" for m in OPTIONS["material_types"]])
-    form_opts = ", ".join([f"{f}({trans_map.get(f, f)})" for f in OPTIONS["form_types"]])
+    # 讓 AI 知道 316L 是不鏽鋼，但 Output 還是要寫 Stainless Steel
+    context_hint = "Reference Map (For understanding only): " + ", ".join([f"{m}={trans_map.get(m, m)}" for m in OPTIONS["material_types"]])
 
     system_prompt = "You are a senior procurement analyst. Normalize RFQ text into strict JSON validated by schema."
 
@@ -25,26 +30,27 @@ def analyze_rfq(text):
         f"*** STRICT RULES ***\n"
         f"1. **ROOT OBJECT**: Output MUST be {{ 'items': [...] }}.\n"
         f"2. **MANDATORY FIELDS**: 'material_type', 'material_spec', 'form', 'dimensions', 'quantity', 'notes'.\n"
-        f"3. **QUANTITY SPLITTING**: One item per quantity tier.\n"
-        f"4. **FORM LOGIC (Priority Order)**:\n"
-        f"   - **Bar Rule**: If dimensions contain symbol 'Ø' or words 'dia', 'diameter', 'round', OR format is 'D*L', set form to 'Bar'.\n"
-        f"   - **Plate/Block Rule**: If item is 'Block', 'Cuboid' OR smallest dimension >= 10mm, set form to 'Plate'.\n"
-        f"   - **Sheet Rule**: If smallest dimension < 10mm, set form to 'Sheet'.\n"
-        f"   - **Tube Rule**: If text mentions 'Tube', 'Pipe', 'OD', 'ID', set form to 'Tube'.\n"
-        f"5. **DIMENSIONS**: Keep original string format exactly (e.g. 'Ø45*1000mm').\n"
-        f"6. **VALID VALUES**: \n"
-        f"   - Materials: {material_opts}\n"
-        f"   - Forms: {form_opts}\n"
+        f"3. **QUANTITY**: MUST be a string with unit (e.g. '10 pcs'). NEVER output raw numbers (e.g. 2000) or strings without unit.\n"
+        f"4. **FORM LOGIC**:\n"
+        f"   - **Bar**: 'Ø', 'dia', 'round', or 'D*L'.\n"
+        f"   - **Plate**: 'Block', 'Cuboid' or smallest dim >= 10mm.\n"
+        f"   - **Sheet**: smallest dim < 10mm.\n"
+        f"   - **Tube**: 'Tube', 'Pipe', 'OD/ID'.\n"
+        f"5. **VALID VALUES (Strict Enum)**: \n"
+        f"   - Material_type MUST be one of: [{pure_mat_opts}]\n"
+        f"   - Form MUST be one of: [{pure_form_opts}]\n"
+        f"   - {context_hint}\n"
         f"   - If unsure, use 'Other' and explain in notes.\n"
+        f"6. **DIMENSIONS**: Keep original string format exactly.\n"
     )
 
-    # 初始化對話歷史
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt}
     ]
 
-    max_retries = 3
+    # 【修正 1】增加重試次數到 5 次
+    max_retries = 5
     
     for attempt in range(max_retries):
         try:
@@ -60,7 +66,7 @@ def analyze_rfq(text):
             content = response.choices[0].message.content.strip()
             raw_data = json.loads(content)
 
-            # [零成本修復] 
+            # [零成本修復] 自動補全根節點
             if isinstance(raw_data, dict) and "items" not in raw_data:
                 if "material_type" in raw_data:
                     raw_data = {"items": [raw_data]}
@@ -71,10 +77,14 @@ def analyze_rfq(text):
             return raw_data
 
         except ValidationError as ve:
-            error_msg = f"JSON Validation Error: {ve.message}. Fix the JSON structure based on the schema rules."
+            # 將具體的錯誤回傳給 AI，讓它修正
+            error_msg = f"JSON Validation Error: {ve.message}. Please fix the value to match the Schema requirements."
             print(f"[Schema 違規 - 第 {attempt + 1} 次] {ve.message}")
+            
             if attempt == max_retries - 1:
+                print("[AI] 重試次數耗盡，解析失敗。")
                 return {"items": []}
+            
             messages.append({"role": "assistant", "content": content})
             messages.append({"role": "user", "content": error_msg})
 
