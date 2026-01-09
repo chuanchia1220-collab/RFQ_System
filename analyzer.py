@@ -20,7 +20,6 @@ def analyze_rfq(text):
 
     # 2. 準備中英對照表 (給 AI 理解用，但不作為 Output 標準)
     trans_map = OPTION_TRANSLATIONS.get("zh", {})
-    # 讓 AI 知道 316L 是不鏽鋼，但 Output 還是要寫 Stainless Steel
     context_hint = "Reference Map (For understanding only): " + ", ".join([f"{m}={trans_map.get(m, m)}" for m in OPTIONS["material_types"]])
 
     system_prompt = "You are a senior procurement analyst. Normalize RFQ text into strict JSON validated by schema."
@@ -42,6 +41,10 @@ def analyze_rfq(text):
         f"   - {context_hint}\n"
         f"   - If unsure, use 'Other' and explain in notes.\n"
         f"6. **DIMENSIONS**: Keep original string format exactly.\n"
+        f"7. **NOTES (CRITICAL)**: Extract additional specs, constraints, or descriptions **VERBATIM** (word-for-word) from the source. \n"
+        f"   - **DO NOT TRANSLATE**. \n"
+        f"   - If the text is in Chinese, keep it in Chinese. \n"
+        f"   - If mixed, keep mixed (e.g. 'corrosion resistant steel type 316L(耐腐蝕316L)(非航太件)').\n"
     )
 
     messages = [
@@ -49,7 +52,6 @@ def analyze_rfq(text):
         {"role": "user", "content": user_prompt}
     ]
 
-    # 【修正 1】增加重試次數到 5 次
     max_retries = 5
     
     for attempt in range(max_retries):
