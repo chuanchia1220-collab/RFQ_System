@@ -1,6 +1,7 @@
 import flet as ft
 import json
 import os
+from datetime import datetime
 from config import TRANSLATIONS, OPTIONS, OPTION_TRANSLATIONS
 import database
 import analyzer
@@ -37,7 +38,7 @@ class SupplierManager(ft.Column):
         self.check_forms = self._create_checkbox_group(OPTIONS["form_types"])
         self.check_qualifications = self._create_checkbox_group(OPTIONS["qualifications"])
 
-        # 2. 建立對話框 (移除 text= 參數以相容 Flet 0.80.1)
+        # 2. 建立對話框
         self.dialog = ft.AlertDialog(
             title=ft.Text(self.t["add_supplier"]),
             content=ft.Container(
@@ -57,13 +58,13 @@ class SupplierManager(ft.Column):
         )
         self.main_page.overlay.append(self.dialog)
 
-        # 3. UI 佈局
+        # 3. UI 佈局 (修正：ElevatedButton -> Button)
         self.data_table = ft.DataTable(
             columns=[ft.DataColumn(ft.Text(self.t[k])) for k in ["name", "contact", "phone", "materials", "forms", "qualifications", "actions"]],
             rows=[]
         )
         
-        self.add_btn = ft.ElevatedButton(
+        self.add_btn = ft.Button(
             self.t["add_supplier"],
             icon=ft.Icons.ADD,
             on_click=self.open_add_dialog
@@ -210,7 +211,7 @@ class TemplateManager(ft.Column):
             rows=[]
         )
 
-        self.add_btn = ft.ElevatedButton(
+        self.add_btn = ft.Button(
             "Add Template",
             icon=ft.Icons.ADD,
             on_click=self.open_add_dialog
@@ -297,7 +298,7 @@ class RFQAnalyzer(ft.Column):
             expand=True
         )
 
-        self.analyze_btn = ft.ElevatedButton(
+        self.analyze_btn = ft.Button(
             "開始解析",
             icon=ft.Icons.ANALYTICS,
             on_click=self.run_analysis
@@ -334,7 +335,6 @@ class RFQAnalyzer(ft.Column):
             self.results_container.controls = []
 
             for item in self.analyzed_items:
-                # 取得 AI 解析結果 (校正後應包含 material_type 與 form)
                 mat_type = item.get("material_type", "Other")
                 form_type = item.get("form", "Other")
                 spec = item.get("spec", {})
@@ -353,7 +353,7 @@ class RFQAnalyzer(ft.Column):
                 qty_text = f"Qty: {spec.get('annual_qty', '')} {spec.get('unit', '')}" if isinstance(spec, dict) else ""
                 spec_text = f"Dims: {dims} | {qty_text}"
 
-                draft_btn = ft.ElevatedButton(
+                draft_btn = ft.Button(
                     "生成草稿",
                     icon=ft.Icons.EMAIL,
                     on_click=lambda e, sp=supplier_dropdown, it=item: self.generate_draft(sp, it)
@@ -364,7 +364,8 @@ class RFQAnalyzer(ft.Column):
                         padding=10,
                         content=ft.Column([
                             ft.ListTile(
-                                leading=ft.Icon(ft.Icons.CIRCLE, color=ft.colors.GREEN if item.get("confidence", 0) > 0.6 else ft.colors.RED),
+                                # 修正：ft.colors -> ft.Colors (大寫)
+                                leading=ft.Icon(ft.Icons.CIRCLE, color=ft.Colors.GREEN if item.get("confidence", 0) > 0.6 else ft.Colors.RED),
                                 title=ft.Text(f"{mat_type} - {form_type}"),
                                 subtitle=ft.Text(spec_text),
                             ),
@@ -405,7 +406,6 @@ class RFQAnalyzer(ft.Column):
         templates = database.get_templates()
         template = templates[0] if templates else (0, "Default", "Inquiry {date}", "<p>Hi,</p>", "<p>Thanks</p>")
 
-        from datetime import datetime
         subject = template[2].format(date=datetime.now().strftime("%Y%m%d")) + f"_{supplier[1]}"
         
         try:
@@ -446,7 +446,7 @@ def main(page: ft.Page):
     def on_nav_change(e):
         index = e.control.selected_index
         content_area.content = None
-        # 修正掛載順序：必須先將元件賦值給 content_area，再執行 load_data
+        # 修正：掛載順序必須先賦值給 content_area.content，再執行 load_data()
         if index == 0:
             content_area.content = supplier_manager
             supplier_manager.load_data()           
@@ -477,4 +477,5 @@ def main(page: ft.Page):
     supplier_manager.load_data()
 
 if __name__ == "__main__":
+    # 修正：ft.app(target=main) 已棄用
     ft.app(main)
