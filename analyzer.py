@@ -23,14 +23,19 @@ def analyze_rfq(text):
     user_prompt = (
         f"Analyze this RFQ text:\n\"\"\"{text}\"\"\"\n\n"
         f"*** STRICT RULES ***\n"
-        f"1. **ROOT OBJECT**: Output MUST be {{ 'items': [...] }}. Do not output a single item object directly.\n"
+        f"1. **ROOT OBJECT**: Output MUST be {{ 'items': [...] }}.\n"
         f"2. **MANDATORY FIELDS**: 'material_type', 'material_spec', 'form', 'dimensions', 'quantity', 'notes'.\n"
-        f"3. **QUANTITY SPLITTING**: One item per quantity tier. Include unit (e.g. '10 pcs').\n"
-        f"4. **VALID VALUES**: \n"
+        f"3. **QUANTITY SPLITTING**: One item per quantity tier.\n"
+        f"4. **FORM LOGIC (Priority Order)**:\n"
+        f"   - **Bar Rule**: If dimensions contain symbol 'Ø' or words 'dia', 'diameter', 'round', OR format is 'D*L', set form to 'Bar'.\n"
+        f"   - **Plate/Block Rule**: If item is 'Block', 'Cuboid' OR smallest dimension >= 10mm, set form to 'Plate'.\n"
+        f"   - **Sheet Rule**: If smallest dimension < 10mm, set form to 'Sheet'.\n"
+        f"   - **Tube Rule**: If text mentions 'Tube', 'Pipe', 'OD', 'ID', set form to 'Tube'.\n"
+        f"5. **DIMENSIONS**: Keep original string format exactly (e.g. 'Ø45*1000mm').\n"
+        f"6. **VALID VALUES**: \n"
         f"   - Materials: {material_opts}\n"
         f"   - Forms: {form_opts}\n"
         f"   - If unsure, use 'Other' and explain in notes.\n"
-        f"5. **DIMENSIONS**: Keep original string format exactly.\n"
     )
 
     # 初始化對話歷史
@@ -55,15 +60,12 @@ def analyze_rfq(text):
             content = response.choices[0].message.content.strip()
             raw_data = json.loads(content)
 
-            # --- [零成本修復] 針對您遇到的 'items' 遺失問題 ---
-            # 如果 AI 回傳的是單一 Item (字典)，我們幫它包成列表
+            # [零成本修復] 
             if isinstance(raw_data, dict) and "items" not in raw_data:
-                # 檢查這是不是一個 Item (有沒有 material_type)
                 if "material_type" in raw_data:
-                    print("[AI 自動修復] 偵測到根節點遺失，正在補全 'items'...")
                     raw_data = {"items": [raw_data]}
 
-            # --- Schema 驗證 ---
+            # Schema 驗證
             validate(instance=raw_data, schema=RFQ_SCHEMA)
             print("[AI] 驗證通過，資料結構完美。")
             return raw_data
@@ -71,23 +73,11 @@ def analyze_rfq(text):
         except ValidationError as ve:
             error_msg = f"JSON Validation Error: {ve.message}. Fix the JSON structure based on the schema rules."
             print(f"[Schema 違規 - 第 {attempt + 1} 次] {ve.message}")
-            
-            # 如果是最後一次嘗試，就放棄
             if attempt == max_retries - 1:
-                print("[AI] 重試次數耗盡，解析失敗。")
                 return {"items": []}
-            
-            # --- [Retry 邏輯] 將錯誤餵回給 AI ---
-            # 1. 把 AI 剛剛講錯的話加進歷史
             messages.append({"role": "assistant", "content": content})
-            # 2. 把錯誤訊息加進歷史 (罵它)
             messages.append({"role": "user", "content": error_msg})
-            print("[AI] 正在將錯誤訊息回傳給 GPT 進行自我修正...")
 
-        except json.JSONDecodeError:
-            print("[AI 錯誤] JSON 格式損壞")
-            return {"items": []}
-            
         except Exception as e:
             print(f"[AI 系統錯誤] {e}")
             return {"items": []}
