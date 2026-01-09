@@ -339,7 +339,14 @@ class RFQAnalyzer(ft.Column):
                 mat_type = item.get("material_type", "Other")
                 form_type = item.get("form", "Other")
                 spec = item.get("spec", {})
-                dims = spec.get("dimensions", {}) if isinstance(spec, dict) else {}
+                
+                # 取得 AI 提取的多數量列表
+                quantities = item.get("quantities", [])
+                if not quantities:
+                     # 容錯：如果沒有提取到列表，嘗試找單一 quantity
+                     single_qty = spec.get("quantity", spec.get("annual_qty", ""))
+                     if single_qty:
+                         quantities = [single_qty]
 
                 print(f"[UI 階段 3] 正在為項目 {mat_type}-{form_type} 搜尋供應商...")
                 matched_suppliers = database.search_suppliers([mat_type], [form_type])
@@ -351,8 +358,8 @@ class RFQAnalyzer(ft.Column):
                 supplier_options = [ft.dropdown.Option(str(s[0]), f"{s[1]} ({s[2]})") for s in matched_suppliers]
                 supplier_dropdown = ft.Dropdown(label="選擇供應商", options=supplier_options, width=300)
                 
-                qty_text = f"Qty: {spec.get('annual_qty', '')} {spec.get('unit', '')}" if isinstance(spec, dict) else ""
-                spec_text = f"Dims: {dims} | {qty_text}"
+                qty_display = ", ".join([str(q) for q in quantities]) if quantities else "N/A"
+                spec_text = f"Dims: {spec.get('dimensions', {})} | Qty: {qty_display}"
 
                 draft_btn = ft.Button(
                     "生成草稿",
@@ -393,7 +400,6 @@ class RFQAnalyzer(ft.Column):
         self.analyze_btn.disabled = False
         self.analyze_btn.text = "開始解析"
 
-    # 修正：將 generate_draft 縮排至類別內部
     def generate_draft(self, supplier_dropdown, item):
         print("\n[Draft] 按鈕被點擊，開始生成流程...")
         supplier_id = supplier_dropdown.value
@@ -411,32 +417,51 @@ class RFQAnalyzer(ft.Column):
         from datetime import datetime
         subject = template[2].format(date=datetime.now().strftime("%Y%m%d")) + f"_{supplier[1]}"
         
+        # 準備資料
+        mat_type = item.get('material_type', '')
+        form_type = item.get('form', '')
+        spec = item.get('spec', {})
+        dims = spec.get('dimensions', '')
+        quantities = item.get('quantities', [])
+        
+        # 如果沒有多數量列表，嘗試找單一數量
+        if not quantities:
+            single_qty = spec.get('quantity', spec.get('annual_qty', ''))
+            if single_qty: quantities = [single_qty]
+            else: quantities = ["-"]
+
+        # 【關鍵功能】建立 HTML 表格
+        table_style = "border-collapse: collapse; width: 100%;"
+        th_style = "border: 1px solid #ddd; padding: 8px; background-color: #f2f2f2; text-align: left;"
+        td_style = "border: 1px solid #ddd; padding: 8px;"
+        
+        # 表頭
+        table_html = f"<table style='{table_style}'>"
+        table_html += f"<tr><th style='{th_style}'>Material</th><th style='{th_style}'>Form</th><th style='{th_style}'>Dimensions</th><th style='{th_style}'>Quantity</th></tr>"
+        
+        # 表格內容 (自動將多個數量拆分為不同行)
+        for qty in quantities:
+            table_html += f"<tr><td style='{td_style}'>{mat_type}</td><td style='{td_style}'>{form_type}</td><td style='{td_style}'>{dims}</td><td style='{td_style}'>{qty}</td></tr>"
+        
+        table_html += "</table>"
+
         try:
-            # 檢查作業系統
             if os.name == 'nt':
-                print("[Draft] 偵測到 Windows 環境，嘗試載入 win32com...")
                 import win32com.client
                 outlook = win32com.client.Dispatch('Outlook.Application')
-                print("[Draft] Outlook 應用程式物件建立成功")
-                
                 mail = outlook.CreateItem(0)
                 mail.Subject = subject
-                mail.HTMLBody = f"{template[3]}<br>Item: {item['material_type']} {item['form']}<br>Spec: {item['spec']}<br>{template[4]}"
+                # 組合最終 Email：Preamble + Table + Closing
+                mail.HTMLBody = f"{template[3]}<br><br>{table_html}<br><br>{template[4]}"
                 mail.To = supplier[3]
                 mail.Save()
-                
-                print("[Draft] 草稿儲存指令已發送")
-                msg = "Outlook 草稿已建立，請檢查草稿匣 (Drafts)"
+                msg = "Outlook 草稿已建立 (含表格)"
             else:
-                msg = f"非 Windows 環境: 已模擬建立草稿給 {supplier[1]}"
+                msg = f"非 Windows 環境: 已模擬建立草稿"
             
             self.main_page.snack_bar = ft.SnackBar(ft.Text(msg))
             self.main_page.snack_bar.open = True
             
-        except ImportError:
-            print("[Draft 錯誤] 找不到 pywin32 模組，請執行 pip install pywin32")
-            self.main_page.snack_bar = ft.SnackBar(ft.Text("錯誤：請安裝 Outlook 驅動 (pip install pywin32)"))
-            self.main_page.snack_bar.open = True
         except Exception as ex:
             print(f"[Draft 錯誤] Outlook 操作失敗: {ex}")
             self.main_page.snack_bar = ft.SnackBar(ft.Text(f"草稿建立失敗: {str(ex)}"))
