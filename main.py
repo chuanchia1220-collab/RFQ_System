@@ -422,7 +422,16 @@ class RFQAnalyzer(ft.Column):
                 )
                 
                 supp_dds = [ft.Dropdown(label=f"供應商 {i+1} ({req_qual})", options=supplier_options, width=200, dense=True) for i in range(4)]
-                batch_draft_btn = ft.Button("生成草稿 (批次)", icon=ft.Icons.EMAIL, on_click=lambda e, rows=ui_rows_data, mt=mat_type, dds=supp_dds: self.generate_batch_drafts(rows, dds, mt))
+
+                # 新增：群組專用的備註輸入框
+                txt_group_anno = ft.TextField(label="詢價備註 (將顯示於 Email Preamble 下方)", multiline=True, min_lines=2, text_size=13)
+
+                # 修改：將 txt_group_anno 傳入 generate_batch_drafts
+                batch_draft_btn = ft.Button(
+                    "生成草稿 (批次)",
+                    icon=ft.Icons.EMAIL,
+                    on_click=lambda e, rows=ui_rows_data, mt=mat_type, dds=supp_dds, anno=txt_group_anno: self.generate_batch_drafts(rows, dds, mt, anno.value)
+                )
                 
                 card = ft.Card(content=ft.Container(padding=20, content=ft.Column([
                     ft.Row([
@@ -433,6 +442,7 @@ class RFQAnalyzer(ft.Column):
                     ft.Divider(), 
                     ft.Row([items_table], expand=True, scroll=ft.ScrollMode.AUTO), 
                     ft.Divider(), 
+                    txt_group_anno,
                     ft.Text(f"選擇詢價對象 (已篩選 {req_qual} 認證, 最多 4 家):", weight=ft.FontWeight.BOLD), 
                     ft.Row(supp_dds, wrap=True), 
                     ft.Row([batch_draft_btn], alignment=ft.MainAxisAlignment.END)
@@ -449,7 +459,7 @@ class RFQAnalyzer(ft.Column):
         self.analyze_btn.disabled = False
         self.analyze_btn.text = "開始解析"
 
-    def generate_batch_drafts(self, ui_rows, dropdowns, material_type_group):
+    def generate_batch_drafts(self, ui_rows, dropdowns, material_type_group, group_annotation):
         selected_ids = [dd.value for dd in dropdowns if dd.value]
         if not selected_ids:
             self.main_page.snack_bar = ft.SnackBar(ft.Text("請至少選擇 1 家供應商"))
@@ -463,6 +473,8 @@ class RFQAnalyzer(ft.Column):
         
         current_items_data = [{"material_type": r["mat_type"], "material_spec": r["spec"].value, "form": r["form"].value, "dimensions": r["dimensions"].value, "quantity": r["quantity"].value, "moq": r["moq"].value, "notes": r["notes"].value, "qual": r["qual"]} for r in ui_rows]
         
+        extra_anno_html = f"<div style='margin-bottom: 10px;'>{group_annotation}</div>" if group_annotation else ""
+
         table_rows_html = "".join([f"<tr><td style='border: 1px solid #333; padding: 10px;'>{item['material_type']}<br>({item['qual']})</td><td style='border: 1px solid #333; padding: 10px;'>{item['material_spec']}</td><td style='border: 1px solid #333; padding: 10px;'>{item['form']}</td><td style='border: 1px solid #333; padding: 10px;'>{item['dimensions']}</td><td style='border: 1px solid #333; padding: 10px;'>{item['quantity']}</td><td style='border: 1px solid #333; padding: 10px;'></td><td style='border: 1px solid #333; padding: 10px;'>{item['moq']}</td><td style='border: 1px solid #333; padding: 10px;'>{item['notes']}</td></tr>" for item in current_items_data])
         full_table_html = f"<table style='border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 13px;'><thead><tr><th style='border: 1px solid #333; padding: 10px; background-color: #eee;'>Material</th><th style='border: 1px solid #333; padding: 10px; background-color: #eee;'>Spec</th><th style='border: 1px solid #333; padding: 10px; background-color: #eee;'>Form</th><th style='border: 1px solid #333; padding: 10px; background-color: #eee;'>Dimensions</th><th style='border: 1px solid #333; padding: 10px; background-color: #eee;'>Quantity</th><th style='border: 1px solid #333; padding: 10px; background-color: #eee;'>Price</th><th style='border: 1px solid #333; padding: 10px; background-color: #eee;'>MOQ</th><th style='border: 1px solid #333; padding: 10px; background-color: #eee;'>Notes</th></tr></thead><tbody>{table_rows_html}</tbody></table>"
         try:
@@ -476,7 +488,7 @@ class RFQAnalyzer(ft.Column):
                     else: subject = (template[2] or "Inquiry").format(date=datetime.now().strftime("%Y%m%d")) + f"_{supplier[1]}"
                     mail = outlook.CreateItem(0)
                     mail.Subject, mail.To, mail.CC = subject, supplier[3], tmpl_cc
-                    mail.HTMLBody = f"<div>{template[3]}</div><br>{full_table_html}<br><div>{template[4]}</div>"
+                    mail.HTMLBody = f"<div>{template[3]}</div>{extra_anno_html}<br>{full_table_html}<br><div>{template[4]}</div>"
                     mail.Save()
                 self.main_page.snack_bar = ft.SnackBar(ft.Text(f"成功建立 {len(selected_ids)} 封草稿"))
             else: self.main_page.snack_bar = ft.SnackBar(ft.Text("非 Windows 環境: 模擬成功"))
