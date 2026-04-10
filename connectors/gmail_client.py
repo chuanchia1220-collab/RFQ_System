@@ -12,47 +12,47 @@ class GmailClient:
         self.smtp_server = "smtp.gmail.com"
         self.smtp_port = 465
 
-    def fetch_unprocessed_rfqs(self, save_dir):
+    def fetch_unprocessed_rfqs(self, base_save_dir):
         """
-        使用 imap_tools 抓取未讀且標題含 RFQ 的信件。
-        必須支援下載附檔 PDF，並存入 1_原始需求 資料夾 (save_dir)。
-        回傳解析出來的郵件結構清單。
+        抓取未讀且標題含 RFQ 的信件。
+        附件將依據 UID 建立獨立資料夾或命名。
         """
         rfq_emails = []
-        os.makedirs(save_dir, exist_ok=True)
+        os.makedirs(base_save_dir, exist_ok=True)
 
         try:
             with MailBox(self.imap_server).login(self.user, self.pwd) as mailbox:
-                # 搜尋未讀且標題包含 RFQ 的信件
-                for msg in mailbox.fetch(AND(seen=False, subject="RFQ")):
+                # mark_seen=False: 確保系統處理完畢前，信件保持未讀，避免漏單
+                for msg in mailbox.fetch(AND(seen=False, subject="RFQ"), mark_seen=False):
                     attachments_info = []
-                    # 處理附件下載
+
                     for att in msg.attachments:
-                        if att.filename.lower().endswith(".pdf") or att.filename.lower().endswith(".eml"):
-                            file_path = os.path.join(save_dir, att.filename)
-                            # 避免檔名重複可以加上 uid
-                            # file_path = os.path.join(save_dir, f"{msg.uid}_{att.filename}")
+                        if att.filename.lower().endswith((".pdf", ".eml")):
+                            # 強制加入 uid 避免不同信件的同名附件覆蓋
+                            safe_filename = f"{msg.uid}_{att.filename}"
+                            file_path = os.path.join(base_save_dir, safe_filename)
+
                             with open(file_path, "wb") as f:
                                 f.write(att.payload)
                             attachments_info.append(file_path)
+
+                    # 優先使用純文字，避免 HTML 標籤消耗 Token
+                    clean_text = msg.text if msg.text else msg.html
 
                     rfq_emails.append({
                         "uid": msg.uid,
                         "subject": msg.subject,
                         "from": msg.from_,
-                        "text": msg.text or msg.html,
+                        "text": clean_text,
                         "attachments": attachments_info,
                         "date": msg.date
                     })
         except Exception as e:
-            print(f"Error fetching emails: {e}")
+            print(f"[Gmail Error] Fetching emails failed: {e}")
 
         return rfq_emails
 
     def send_mail(self, to_addr, subject, body, bcc_self=True):
-        """
-        使用 smtplib 發送郵件
-        """
         msg = EmailMessage()
         msg.set_content(body)
         msg['Subject'] = subject
@@ -67,19 +67,25 @@ class GmailClient:
             with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, context=context) as server:
                 server.login(self.user, self.pwd)
                 server.send_message(msg)
-                print(f"Successfully sent email to {to_addr}")
+                print(f"[Gmail Info] Successfully sent email to {to_addr}")
         except Exception as e:
-            print(f"Failed to send email: {e}")
+            print(f"[Gmail Error] Failed to send email: {e}")
 
     def update_label(self, msg_uid, new_label):
         """
-        更新 Gmail 標籤 (RFQ-進行中 / 已詢價 / 已完成)
-        IMAP tags 對應到 Gmail labels.
+        注意：使用此功能前，必須先在 Gmail 網頁端手動建立對應名稱的標籤
         """
         try:
             with MailBox(self.imap_server).login(self.user, self.pwd) as mailbox:
-                # 使用 Gmail 的 X-GM-LABELS 擴充功能來設定自訂標籤
                 mailbox.client.uid('STORE', str(msg_uid), '+X-GM-LABELS', f'"{new_label}"')
-                print(f"Label {new_label} added to message {msg_uid}")
+                print(f"[Gmail Info] Label '{new_label}' added to message UID {msg_uid}")
         except Exception as e:
-            print(f"Error updating label: {e}")
+            print(f"[Gmail Error] Error updating label: {e}")
+
+    def mark_as_read(self, msg_uid):
+        """將信件標記為已讀，於生成草稿後呼叫"""
+        try:
+            with MailBox(self.imap_server).login(self.user, self.pwd) as mailbox:
+                mailbox.flag(str(msg_uid), '\\Seen', True)
+        except Exception as e:
+            print(f"[Gmail Error] Failed to mark as read: {e}")
