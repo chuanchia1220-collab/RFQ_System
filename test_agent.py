@@ -72,7 +72,7 @@ class TestRFQSkill(unittest.TestCase):
         # In our implementation self.model is used, we mock its generate_content
         self.skill.model.generate_content.return_value = mock_response
 
-        result = self.skill.parse_and_draft("Need 10 pcs of Aluminum 6061 Bar")
+        result = self.skill.parse_and_draft("Need 10 pcs of Aluminum 6061 Bar", pdf_file_paths=[])
 
         self.assertIn("items", result)
         self.assertIn("draft", result)
