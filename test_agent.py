@@ -41,8 +41,8 @@ class TestGmailClient(unittest.TestCase):
             self.assertEqual(len(rfqs), 1)
             self.assertEqual(rfqs[0]['uid'], "123")
             self.assertEqual(rfqs[0]['subject'], "New RFQ")
-            self.assertEqual(rfqs[0]['attachments'], ["/tmp/test_rfq/spec.pdf"])
-            m.assert_called_with("/tmp/test_rfq/spec.pdf", "wb")
+            self.assertEqual(rfqs[0]['attachments'], ["/tmp/test_rfq/123_spec.pdf"])
+            m.assert_called_with("/tmp/test_rfq/123_spec.pdf", "wb")
             m().write.assert_called_with(b"pdf_data")
 
     @patch('connectors.gmail_client.smtplib.SMTP_SSL')

@@ -17,12 +17,24 @@ OPTIONS = {
 
 OPTION_TRANSLATIONS = {
     "zh": {
-        "Aluminum": "鋁材", "Copper": "銅材", "Carbon Steel": "碳鋼",
-        "Stainless Steel": "不鏽鋼", "Tool Steel": "工具鋼", "Nickel Alloy": "鎳合金",
-        "Titanium Alloy": "鈦合金", "Plastic": "塑膠", "Other": "其他",
-        "Bar": "棒材", "Tube": "管材", "Sheet": "板材 (薄)", "Plate": "板材 (厚)",
-        "Forging": "鍛造件", "Stamping": "沖壓件",
-        "ISO": "ISO 認證", "Automotive": "車規", "Aerospace": "航太"
+        "Aluminum": "鋁材",
+        "Copper": "銅材",
+        "Carbon Steel": "碳鋼",
+        "Stainless Steel": "不鏽鋼",
+        "Tool Steel": "工具鋼",
+        "Nickel Alloy": "鎳合金",
+        "Titanium Alloy": "鈦合金",
+        "Plastic": "塑膠",
+        "Other": "其他",
+        "Bar": "棒材",
+        "Tube": "管材",
+        "Sheet": "板材 (薄)",
+        "Plate": "板材 (厚)",
+        "Forging": "鍛造件",
+        "Stamping": "沖壓件",
+        "ISO": "ISO 認證",
+        "Automotive": "車規",
+        "Aerospace": "航太"
     }
 }
 
@@ -64,6 +76,8 @@ class RFQSkill:
             f"6. **DIMENSIONS**: Keep original string format exactly.\n"
             f"7. **NOTES**: Extract technical specs or constraints. Do not translate them.\n"
             f"8. **QUALIFICATION**: Extract the required qualification for each item (must be 'ISO', 'Automotive', or 'Aerospace'). Default to 'ISO'.\n"
+            f"   - **Automotive**: If text mentions '汽車', '車用', 'IATF 16949', or 'IATF'.\n"
+            f"   - **Aerospace**: If text mentions '航太', '航空', 'Aerospace', 'AS9100', or 'NADCAP'.\n"
             f"9. **DRAFT**: Provide a professional email draft based on the RFQ. If a previous_draft and user_instruction are provided, modify the draft accordingly.\n"
         )
 
