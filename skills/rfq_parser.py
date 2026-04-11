@@ -1,4 +1,5 @@
 import json
+import os
 import google.generativeai as genai
 
 OPTIONS = {
@@ -43,15 +44,13 @@ class RFQSkill:
         genai.configure(api_key=self.api_key)
         self.model = genai.GenerativeModel('gemini-1.5-flash')
 
-    def parse_and_draft(self, email_text, pdf_file_path=None, previous_draft=None, user_instruction=None):
+    def parse_and_draft(self, email_text, pdf_file_paths=None, previous_draft=None, user_instruction=None):
         """
-        1. 支援多模態輸入 (Text + PDF)
+        1. 支援多模態輸入 (Text + 複數 PDF)
         2. 提取規格、數量、交期
         3. 若有 user_instruction，則依照指令修改 previous_draft
         4. 回傳 JSON 格式的解析結果與草稿
         """
-
-        # 準備 prompt 的 context
         pure_mat_opts = ", ".join(OPTIONS["material_types"])
         pure_form_opts = ", ".join(OPTIONS["form_types"])
         trans_map = OPTION_TRANSLATIONS.get("zh", {})
@@ -92,12 +91,16 @@ class RFQSkill:
             user_prompt += f"User Instruction for modifying the draft:\n\"\"\"{user_instruction}\"\"\"\n\n"
 
         contents = [user_prompt]
-        uploaded_file = None
+        uploaded_files = []
 
         try:
-            if pdf_file_path:
-                uploaded_file = genai.upload_file(path=pdf_file_path)
-                contents.insert(0, uploaded_file) # PDF content
+            # 支援多個 PDF 檔案上傳
+            if pdf_file_paths:
+                for pdf_path in pdf_file_paths:
+                    if os.path.exists(pdf_path):
+                        file_obj = genai.upload_file(path=pdf_path)
+                        uploaded_files.append(file_obj)
+                        contents.insert(0, file_obj)
 
             response = self.model.generate_content(
                 contents,
@@ -123,8 +126,9 @@ class RFQSkill:
             print(f"[AI 系統錯誤] {e}")
             return {"items": [], "draft": "", "error": str(e)}
         finally:
-            if uploaded_file:
-                 try:
-                     genai.delete_file(uploaded_file.name)
-                 except:
-                     pass
+            # 清理所有上傳的暫存檔案
+            for f_obj in uploaded_files:
+                try:
+                    genai.delete_file(f_obj.name)
+                except:
+                    pass
