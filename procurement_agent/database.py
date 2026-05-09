@@ -105,6 +105,22 @@ def get_documents_by_supplier(supplier_id: str = None) -> List[Dict[str, Any]]:
     else:
         return execute_query("SELECT d.*, s.Name as Supplier_Name FROM Document_Master d JOIN Supplier_Master s ON d.Supplier_ID = s.Supplier_ID")
 
+def get_all_document_statuses() -> List[Dict[str, Any]]:
+    """Retrieves all documents with their supplier names."""
+    query = '''
+        SELECT
+            d.Doc_ID,
+            s.Supplier_ID,
+            s.Name as Supplier_Name,
+            d.Doc_Type,
+            d.Status
+        FROM
+            Document_Master d
+        JOIN
+            Supplier_Master s ON d.Supplier_ID = s.Supplier_ID
+    '''
+    return execute_query(query)
+
 def get_missing_documents() -> List[Dict[str, Any]]:
     """Retrieves a list of suppliers and the documents they are missing (Status = 'pending')."""
     query = '''
