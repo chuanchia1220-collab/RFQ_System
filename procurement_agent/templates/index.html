@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Next-Gen Procurement Agent_</title>
+    <style>
+        /* OpenClaw Terminal CSS Styles (Dark mode, Monospace) */
+        :root {
+            --bg-color: #0d1117;
+            --text-color: #00ff00;
+            --panel-bg: #161b22;
+            --border-color: #30363d;
+            --hover-bg: #30363d;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+
+        h1, h2 {
+            margin-top: 0;
+        }
+
+        .container {
+            display: flex;
+            flex: 1;
+            gap: 20px;
+            overflow: hidden;
+        }
+
+        .panel {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Left Panel - Dashboard */
+        .dashboard-panel {
+            flex: 1;
+            overflow: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th, td {
+            border: 1px solid var(--border-color);
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #21262d;
+        }
+
+        .status-pending {
+            color: #ffaa00;
+        }
+
+        .status-signed {
+            color: var(--text-color);
+        }
+
+        /* Right Panel - Chat */
+        .chat-panel {
+            flex: 1;
+        }
+
+        .chat-history {
+            flex: 1;
+            border: 1px solid var(--border-color);
+            background-color: var(--bg-color);
+            padding: 10px;
+            overflow-y: auto;
+            margin-bottom: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .message {
+            padding: 8px;
+            border-radius: 4px;
+            max-width: 80%;
+        }
+
+        .user-message {
+            background-color: #21262d;
+            align-self: flex-end;
+            border: 1px solid var(--border-color);
+        }
+
+        .bot-message {
+            background-color: transparent;
+            align-self: flex-start;
+            border-left: 2px solid var(--text-color);
+        }
+
+        .chat-input-container {
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 10px;
+            font-family: inherit;
+        }
+
+        button {
+            background-color: #21262d;
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 10px 20px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: 0.3s;
+        }
+
+        button:hover {
+            background-color: var(--hover-bg);
+            border-color: #8b949e;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            display: none;
+            color: #ffaa00;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>> Next-Gen Procurement Agent_</h1>
+
+    <div class="container">
+        <!-- Left Panel: Compliance Dashboard -->
+        <div class="panel dashboard-panel">
+            <h2>>> Compliance Dashboard</h2>
+            <table id="supplierTable">
+                <thead>
+                    <tr>
+                        <th>Doc ID</th>
+                        <th>Supplier ID</th>
+                        <th>Supplier Name</th>
+                        <th>Doc Type</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Populated by JS -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Right Panel: AI Chat -->
+        <div class="panel chat-panel">
+            <h2>>> AI Agent Chat</h2>
+            <div class="chat-history" id="chatHistory">
+                <div class="message bot-message">System ready. Ask natural language questions about supplier compliance.</div>
+            </div>
+
+            <div class="loading" id="loadingIndicator">Agent is querying the database...</div>
+
+            <div class="chat-input-container">
+                <input type="text" id="chatInput" placeholder="Ex: 幫我查出目前有哪幾家供應商還沒簽回 NDA？" onkeypress="handleKeyPress(event)">
+                <button id="sendBtn" onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Fetch and render supplier table
+        async function loadSuppliers() {
+            try {
+                const response = await fetch('/api/suppliers');
+                const data = await response.json();
+
+                const tbody = document.querySelector('#supplierTable tbody');
+                tbody.innerHTML = '';
+
+                if (data.error) {
+                    tbody.innerHTML = `<tr><td colspan="5">Error: ${data.error}</td></tr>`;
+                    return;
+                }
+
+                data.forEach(row => {
+                    const statusClass = row.Status === 'pending' ? 'status-pending' : 'status-signed';
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${row.Doc_ID}</td>
+                        <td>${row.Supplier_ID}</td>
+                        <td>${row.Supplier_Name}</td>
+                        <td>${row.Doc_Type}</td>
+                        <td class="${statusClass}">${row.Status}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (error) {
+                console.error("Failed to load suppliers:", error);
+            }
+        }
+
+        // Chat functionality
+        function appendMessage(sender, text) {
+            const history = document.getElementById('chatHistory');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${sender === 'user' ? 'user-message' : 'bot-message'}`;
+            // Simple new line to br conversion for basic formatting
+            msgDiv.innerHTML = text.replace(/\n/g, '<br>');
+            history.appendChild(msgDiv);
+            history.scrollTop = history.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            if (!message) return;
+
+            // Disable input while processing
+            input.value = '';
+            input.disabled = true;
+            const btn = document.getElementById('sendBtn');
+            btn.disabled = true;
+            document.getElementById('loadingIndicator').style.display = 'block';
+
+            appendMessage('user', message);
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ message: message })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    appendMessage('bot', `[Error]: ${data.error}`);
+                } else {
+                    appendMessage('bot', data.response);
+                }
+            } catch (error) {
+                appendMessage('bot', `[Connection Error]: ${error.message}`);
+            } finally {
+                input.disabled = false;
+                btn.disabled = false;
+                document.getElementById('loadingIndicator').style.display = 'none';
+                input.focus();
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', loadSuppliers);
+    </script>
+</body>
+</html>
