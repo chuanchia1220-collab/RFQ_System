@@ -60,7 +60,7 @@ def _execute_sql(query: str) -> str:
 
 def _call_gemini_rest_with_retry(prompt: str, retries: int = 3, system_instruction: str = None) -> str:
     """Calls Gemini REST API with strict 3-retry fallback and physical rate-limiting."""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={API_KEY}"
 
     headers = {"Content-Type": "application/json"}
 
