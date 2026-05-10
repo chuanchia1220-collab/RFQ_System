@@ -76,6 +76,28 @@
             color: var(--text-color);
         }
 
+        /* Upload Section */
+        .upload-section {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .upload-form {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        select, input[type="file"] {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 8px;
+            font-family: inherit;
+        }
+
         /* Right Panel - Chat */
         .chat-panel {
             flex: 1;
@@ -173,6 +195,25 @@
                     <!-- Populated by JS -->
                 </tbody>
             </table>
+
+            <div class="upload-section">
+                <h2>>> Upload Document</h2>
+                <form class="upload-form" id="uploadForm">
+                    <select id="supplierSelect" required>
+                        <option value="">Select Supplier</option>
+                    </select>
+                    <select id="docTypeSelect" required>
+                        <option value="">Select Doc Type</option>
+                        <option value="NDA">NDA</option>
+                        <option value="Contract">Contract</option>
+                        <option value="ISO_Cert">ISO_Cert</option>
+                        <option value="Quality_Agreement">Quality_Agreement</option>
+                    </select>
+                    <input type="file" id="fileInput" required>
+                    <button type="button" onclick="uploadDocument()" id="uploadBtn">Upload</button>
+                </form>
+                <div id="uploadStatus" style="margin-top: 10px; color: #ffaa00;"></div>
+            </div>
         </div>
 
         <!-- Right Panel: AI Chat -->
@@ -206,6 +247,10 @@
                     return;
                 }
 
+                const supplierSelect = document.getElementById('supplierSelect');
+                const existingSuppliers = new Set();
+                let supplierOptionsHTML = '<option value="">Select Supplier</option>';
+
                 data.forEach(row => {
                     const statusClass = row.Status === 'pending' ? 'status-pending' : 'status-signed';
                     const tr = document.createElement('tr');
@@ -217,9 +262,67 @@
                         <td class="${statusClass}">${row.Status}</td>
                     `;
                     tbody.appendChild(tr);
+
+                    if (!existingSuppliers.has(row.Supplier_ID)) {
+                        existingSuppliers.add(row.Supplier_ID);
+                        supplierOptionsHTML += `<option value="${row.Supplier_ID}">${row.Supplier_ID} - ${row.Supplier_Name}</option>`;
+                    }
                 });
+
+                supplierSelect.innerHTML = supplierOptionsHTML;
             } catch (error) {
                 console.error("Failed to load suppliers:", error);
+            }
+        }
+
+        async function uploadDocument() {
+            const supplierSelect = document.getElementById('supplierSelect');
+            const docTypeSelect = document.getElementById('docTypeSelect');
+            const fileInput = document.getElementById('fileInput');
+            const uploadStatus = document.getElementById('uploadStatus');
+            const uploadBtn = document.getElementById('uploadBtn');
+
+            const supplierId = supplierSelect.value;
+            const docType = docTypeSelect.value;
+            const file = fileInput.files[0];
+
+            if (!supplierId || !docType || !file) {
+                uploadStatus.textContent = "Please fill all fields and select a file.";
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('supplier_id', supplierId);
+            formData.append('doc_type', docType);
+            formData.append('file', file);
+
+            uploadBtn.disabled = true;
+            uploadStatus.textContent = "Uploading...";
+
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (response.ok) {
+                    uploadStatus.textContent = "Upload successful! Updating dashboard...";
+                    uploadStatus.style.color = "var(--text-color)";
+                    // Reset form
+                    document.getElementById('uploadForm').reset();
+                    // Refresh dashboard
+                    await loadSuppliers();
+                    setTimeout(() => { uploadStatus.textContent = ""; }, 3000);
+                } else {
+                    uploadStatus.textContent = `Error: ${result.error}`;
+                    uploadStatus.style.color = "red";
+                }
+            } catch (error) {
+                uploadStatus.textContent = `Upload failed: ${error.message}`;
+                uploadStatus.style.color = "red";
+            } finally {
+                uploadBtn.disabled = false;
             }
         }
 

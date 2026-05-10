@@ -48,7 +48,7 @@ def init_db():
                 Supplier_ID TEXT NOT NULL,
                 Doc_Type TEXT NOT NULL,
                 File_Path TEXT,
-                Status TEXT NOT NULL CHECK(Status IN ('signed', 'pending')),
+                Status TEXT NOT NULL CHECK(Status IN ('signed', 'pending', '已簽回')),
                 FOREIGN KEY (Supplier_ID) REFERENCES Supplier_Master(Supplier_ID)
             )
         ''')
@@ -88,6 +88,19 @@ def execute_update(query: str, params: tuple = ()):
     finally:
         if 'conn' in locals() and conn:
             conn.close()
+
+def update_document_status(supplier_id: str, doc_type: str, file_path: str, status: str = '已簽回'):
+    """Updates the status and file path of a document."""
+    query = '''
+        UPDATE Document_Master
+        SET Status = ?, File_Path = ?
+        WHERE Supplier_ID = ? AND Doc_Type = ?
+    '''
+    execute_update(query, (status, file_path, supplier_id, doc_type))
+
+def seed_dummy_data():
+    """Dummy function to prevent error when app.py calls it. Keep empty or add logic later."""
+    pass
 
 # --- Helper Functions for UI ---
 
