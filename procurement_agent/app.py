@@ -28,6 +28,44 @@ db.seed_dummy_data()
 def index():
     return render_template('index.html')
 
+@app.route('/api/doc_types', methods=['GET'])
+def get_doc_types():
+    """Returns a list of unique document types from Document_Master."""
+    try:
+        query = "SELECT DISTINCT Doc_Type FROM Document_Master WHERE Doc_Type IS NOT NULL AND Doc_Type != ''"
+        results = db.execute_query(query)
+        doc_types = [row['Doc_Type'] for row in results]
+        return jsonify({"doc_types": doc_types})
+    except Exception as e:
+        logging.error("Error fetching doc types", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/import_suppliers', methods=['POST'])
+def import_suppliers():
+    """Handles CSV upload and upserts suppliers."""
+    import csv
+    import io
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file part"}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "No selected file"}), 400
+
+        if file and file.filename.endswith('.csv'):
+            stream = io.StringIO(file.stream.read().decode("utf-8-sig"), newline=None)
+            csv_input = csv.DictReader(stream)
+            supplier_list = [row for row in csv_input]
+
+            db.upsert_suppliers(supplier_list)
+            return jsonify({"message": f"Successfully processed {len(supplier_list)} suppliers from CSV."})
+
+        return jsonify({"error": "Invalid file format. Please upload a CSV."}), 400
+    except Exception as e:
+        logging.error("Error importing suppliers via CSV", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/suppliers', methods=['GET'])
 def get_suppliers():
     """Returns the flat list of all document statuses."""
@@ -36,6 +74,25 @@ def get_suppliers():
         return jsonify(data)
     except Exception as e:
         logging.error("Error fetching suppliers data", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/all_emails', methods=['GET'])
+def get_all_emails():
+    """Returns a concatenated string of unique emails from all suppliers."""
+    try:
+        suppliers = db.get_suppliers()
+        all_emails = set()
+        for sup in suppliers:
+            email_field = sup.get('Email')
+            if email_field:
+                # Split by semicolon in case there are multiple emails per field
+                emails = [e.strip() for e in email_field.split(';') if e.strip()]
+                all_emails.update(emails)
+
+        concatenated_emails = "; ".join(all_emails)
+        return jsonify({"emails": concatenated_emails})
+    except Exception as e:
+        logging.error("Error fetching all emails", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/upload', methods=['POST'])
@@ -48,11 +105,15 @@ def upload_file():
         file = request.files['file']
         supplier_id = request.form.get('supplier_id')
         doc_type = request.form.get('doc_type')
+        custom_doc_type = request.form.get('customDocType')
+
+        # Prefer customDocType over doc_type
+        final_doc_type = custom_doc_type.strip() if custom_doc_type and custom_doc_type.strip() else doc_type
 
         if file.filename == '':
             return jsonify({"error": "No selected file"}), 400
 
-        if not supplier_id or not doc_type:
+        if not supplier_id or not final_doc_type:
             return jsonify({"error": "Missing supplier_id or doc_type"}), 400
 
         if file:
@@ -62,7 +123,7 @@ def upload_file():
 
             # Sanitize inputs to prevent path traversal
             safe_supplier_id = secure_filename(supplier_id)
-            safe_doc_type = secure_filename(doc_type)
+            safe_doc_type = secure_filename(final_doc_type)
 
             # Construct normalized filename
             new_filename = f"{safe_supplier_id}_{safe_doc_type}{ext}"
@@ -71,8 +132,8 @@ def upload_file():
             # Save file
             file.save(file_path)
 
-            # Update database status to '已簽回'
-            db.update_document_status(supplier_id, doc_type, file_path, status='已簽回')
+            # Update database status to '已簽回' and handle custom type inserts
+            db.update_document_status(supplier_id, final_doc_type, file_path, status='已簽回')
 
             logging.info(f"Successfully uploaded and renamed file to {new_filename} for Supplier {supplier_id}")
             return jsonify({"message": "File uploaded successfully", "filename": new_filename})
@@ -80,6 +141,11 @@ def upload_file():
     except Exception as e:
         logging.error("Error handling file upload", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/sync_oracle', methods=['GET'])
+def sync_oracle():
+    """Placeholder endpoint for future daily Oracle integration."""
+    return jsonify({"status": "ready for oracle integration"})
 
 @app.route('/api/chat', methods=['POST'])
 def chat():

@@ -81,3 +81,17 @@ requests.exceptions.HTTPError: 400 Client Error: Bad Request for url: https://ge
 2026-05-09 15:28:35,704 - INFO - 127.0.0.1 - - [09/May/2026 15:28:35] "POST /api/chat HTTP/1.1" 200 -
 2026-05-10 01:13:13,631 - INFO - Database initialized successfully.
 2026-05-10 01:13:13,789 - INFO - CSV data imported successfully.
+2026-05-10 13:01:31,737 - CRITICAL - GEMINI_API_KEY not found in environment variables. Terminating.
+2026-05-10 13:06:00,542 - INFO - Database initialized and migrated successfully.
+2026-05-10 13:06:00,689 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.2:5000
+2026-05-10 13:06:00,689 - INFO - [33mPress CTRL+C to quit[0m
+2026-05-10 13:06:00,690 - INFO -  * Restarting with stat
+2026-05-10 13:06:01,043 - INFO - Database initialized and migrated successfully.
+2026-05-10 13:06:01,070 - WARNING -  * Debugger is active!
+2026-05-10 13:06:01,072 - INFO -  * Debugger PIN: 631-326-424
+2026-05-10 13:06:04,248 - INFO - 127.0.0.1 - - [10/May/2026 13:06:04] "GET / HTTP/1.1" 200 -
+2026-05-10 13:06:04,591 - INFO - 127.0.0.1 - - [10/May/2026 13:06:04] "GET /api/doc_types HTTP/1.1" 200 -
+2026-05-10 13:06:04,592 - INFO - 127.0.0.1 - - [10/May/2026 13:06:04] "GET /api/suppliers HTTP/1.1" 200 -
