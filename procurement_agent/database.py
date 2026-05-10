@@ -53,8 +53,20 @@ def init_db():
             )
         ''')
 
+        # Lossless Schema Upgrade
+        # Check and add Tax_ID, Category_Code, Category_Name if not exist
+        cursor.execute("PRAGMA table_info(Supplier_Master)")
+        columns = [info[1] for info in cursor.fetchall()]
+
+        if 'Tax_ID' not in columns:
+            cursor.execute("ALTER TABLE Supplier_Master ADD COLUMN Tax_ID TEXT")
+        if 'Category_Code' not in columns:
+            cursor.execute("ALTER TABLE Supplier_Master ADD COLUMN Category_Code TEXT")
+        if 'Category_Name' not in columns:
+            cursor.execute("ALTER TABLE Supplier_Master ADD COLUMN Category_Name TEXT")
+
         conn.commit()
-        logging.info("Database initialized successfully.")
+        logging.info("Database initialized and migrated successfully.")
     except Exception as e:
         logging.error("Error initializing database schema", exc_info=True)
     finally:
@@ -91,12 +103,134 @@ def execute_update(query: str, params: tuple = ()):
 
 def update_document_status(supplier_id: str, doc_type: str, file_path: str, status: str = '已簽回'):
     """Updates the status and file path of a document."""
-    query = '''
-        UPDATE Document_Master
-        SET Status = ?, File_Path = ?
-        WHERE Supplier_ID = ? AND Doc_Type = ?
-    '''
-    execute_update(query, (status, file_path, supplier_id, doc_type))
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Check if the document exists
+        cursor.execute("SELECT Doc_ID FROM Document_Master WHERE Supplier_ID = ? AND Doc_Type = ?", (supplier_id, doc_type))
+        row = cursor.fetchone()
+
+        if row:
+            cursor.execute('''
+                UPDATE Document_Master
+                SET Status = ?, File_Path = ?
+                WHERE Supplier_ID = ? AND Doc_Type = ?
+            ''', (status, file_path, supplier_id, doc_type))
+        else:
+            import uuid
+            doc_id = "DOC-" + str(uuid.uuid4())[:8]
+            cursor.execute('''
+                INSERT INTO Document_Master (Doc_ID, Supplier_ID, Doc_Type, File_Path, Status)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (doc_id, supplier_id, doc_type, file_path, status))
+
+        conn.commit()
+    except Exception as e:
+        logging.error(f"Error updating document status for {supplier_id} - {doc_type}", exc_info=True)
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+
+def upsert_suppliers(supplier_data_list: List[Dict[str, Any]]):
+    """Upserts suppliers based on Name and Tax_ID."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # We need to know which columns are in Supplier_Master to avoid errors
+        # on missing Address, Materials, Forms, Qualifications
+        cursor.execute("PRAGMA table_info(Supplier_Master)")
+        db_columns = [info[1] for info in cursor.fetchall()]
+
+        for data in supplier_data_list:
+            name = data.get("Name", "")
+            tax_id = data.get("Tax_ID", "")
+
+            # Use Name and Tax_ID to identify a supplier
+            # If both Name and Tax_ID match, it is an existing supplier.
+            # (Assuming matching by just Name if Tax_ID is empty is also valid, or Name + Tax_ID combined)
+            cursor.execute(
+                "SELECT * FROM Supplier_Master WHERE Name = ? AND (Tax_ID = ? OR Tax_ID IS NULL)",
+                (name, tax_id)
+            )
+            existing = cursor.fetchone()
+
+            if existing:
+                existing_dict = dict(existing)
+
+                # Merge logic
+                new_contact = data.get("Contact", "")
+                old_contact = existing_dict.get("pmn31", "")
+                merged_contact = "; ".join(filter(None, [old_contact, new_contact])) if new_contact != old_contact else old_contact
+
+                new_email = data.get("Email", "")
+                old_email = existing_dict.get("Email", "")
+                merged_email = "; ".join(filter(None, [old_email, new_email])) if new_email != old_email else old_email
+
+                cat_code = data.get("Category_Code", existing_dict.get("Category_Code", ""))
+                cat_name = data.get("Category_Name", existing_dict.get("Category_Name", ""))
+
+                update_query = '''
+                    UPDATE Supplier_Master
+                    SET pmn31 = ?, Email = ?, Category_Code = ?, Category_Name = ?
+                '''
+                params = [merged_contact, merged_email, cat_code, cat_name]
+
+                # Update Address only if the column exists in db
+                if 'Address' in db_columns:
+                    update_query += ", Address = ?"
+                    params.append(data.get("Address", existing_dict.get("Address", "")))
+
+                update_query += " WHERE Supplier_ID = ?"
+                params.append(existing_dict["Supplier_ID"])
+
+                cursor.execute(update_query, tuple(params))
+            else:
+                import uuid
+                supplier_id = data.get("Supplier_ID")
+                if not supplier_id:
+                    supplier_id = "TMP-" + str(uuid.uuid4())[:8]
+
+                insert_cols = ["Supplier_ID", "Name", "Tax_ID", "Email", "pmn31", "Category_Code", "Category_Name"]
+                insert_vals = [
+                    supplier_id,
+                    name,
+                    tax_id,
+                    data.get("Email", ""),
+                    data.get("Contact", ""),
+                    data.get("Category_Code", ""),
+                    data.get("Category_Name", "")
+                ]
+
+                if 'Address' in db_columns:
+                    insert_cols.append("Address")
+                    insert_vals.append(data.get("Address", ""))
+
+                if 'Materials' in db_columns:
+                    insert_cols.append("Materials")
+                    insert_vals.append(data.get("Materials", ""))
+                if 'Forms' in db_columns:
+                    insert_cols.append("Forms")
+                    insert_vals.append(data.get("Forms", ""))
+                if 'Qualifications' in db_columns:
+                    insert_cols.append("Qualifications")
+                    insert_vals.append(data.get("Qualifications", ""))
+
+                placeholders = ", ".join(["?"] * len(insert_cols))
+                col_str = ", ".join(insert_cols)
+
+                cursor.execute(
+                    f"INSERT INTO Supplier_Master ({col_str}) VALUES ({placeholders})",
+                    tuple(insert_vals)
+                )
+
+        conn.commit()
+    except Exception as e:
+        logging.error("Error upserting suppliers", exc_info=True)
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
 
 def seed_dummy_data():
     """Dummy function to prevent error when app.py calls it. Keep empty or add logic later."""

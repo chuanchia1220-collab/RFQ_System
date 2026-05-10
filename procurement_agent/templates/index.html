@@ -181,6 +181,11 @@
         <!-- Left Panel: Compliance Dashboard -->
         <div class="panel dashboard-panel">
             <h2>>> Compliance Dashboard</h2>
+            <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
+                <input type="file" id="csvFileInput" accept=".csv" style="padding: 5px;">
+                <button onclick="importSuppliers()">更新供應商名冊 (CSV)</button>
+                <button onclick="sendEmails()">發送郵件給所有廠商</button>
+            </div>
             <table id="supplierTable">
                 <thead>
                     <tr>
@@ -202,13 +207,10 @@
                     <select id="supplierSelect" required>
                         <option value="">Select Supplier</option>
                     </select>
-                    <select id="docTypeSelect" required>
+                    <select id="docType" required>
                         <option value="">Select Doc Type</option>
-                        <option value="NDA">NDA</option>
-                        <option value="Contract">Contract</option>
-                        <option value="ISO_Cert">ISO_Cert</option>
-                        <option value="Quality_Agreement">Quality_Agreement</option>
                     </select>
+                    <input type="text" id="customDocType" placeholder="或手動輸入新文件類型...">
                     <input type="file" id="fileInput" required>
                     <button type="button" onclick="uploadDocument()" id="uploadBtn">Upload</button>
                 </form>
@@ -275,18 +277,87 @@
             }
         }
 
+        async function loadDocTypes() {
+            try {
+                const response = await fetch('/api/doc_types');
+                const data = await response.json();
+
+                const docTypeSelect = document.getElementById('docType');
+                docTypeSelect.innerHTML = '<option value="">Select Doc Type</option>';
+
+                if (data.doc_types) {
+                    data.doc_types.forEach(type => {
+                        const option = document.createElement('option');
+                        option.value = type;
+                        option.textContent = type;
+                        docTypeSelect.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error("Failed to load doc types:", error);
+            }
+        }
+
+        async function importSuppliers() {
+            const fileInput = document.getElementById('csvFileInput');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert("Please select a CSV file first.");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/api/import_suppliers', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (response.ok) {
+                    alert(result.message);
+                    await loadSuppliers();
+                    fileInput.value = ''; // Reset
+                } else {
+                    alert(`Error: ${result.error}`);
+                }
+            } catch (error) {
+                alert(`Import failed: ${error.message}`);
+            }
+        }
+
+        async function sendEmails() {
+            try {
+                const response = await fetch('/api/all_emails');
+                const data = await response.json();
+
+                if (response.ok && data.emails) {
+                    window.location.href = "mailto:?bcc=" + data.emails;
+                } else {
+                    alert(data.error ? `Error: ${data.error}` : "No emails found.");
+                }
+            } catch (error) {
+                alert(`Failed to get emails: ${error.message}`);
+            }
+        }
+
         async function uploadDocument() {
             const supplierSelect = document.getElementById('supplierSelect');
-            const docTypeSelect = document.getElementById('docTypeSelect');
+            const docTypeSelect = document.getElementById('docType');
+            const customDocTypeInput = document.getElementById('customDocType');
             const fileInput = document.getElementById('fileInput');
             const uploadStatus = document.getElementById('uploadStatus');
             const uploadBtn = document.getElementById('uploadBtn');
 
             const supplierId = supplierSelect.value;
             const docType = docTypeSelect.value;
+            const customDocType = customDocTypeInput.value;
             const file = fileInput.files[0];
 
-            if (!supplierId || !docType || !file) {
+            if (!supplierId || (!docType && !customDocType) || !file) {
                 uploadStatus.textContent = "Please fill all fields and select a file.";
                 return;
             }
@@ -294,6 +365,7 @@
             const formData = new FormData();
             formData.append('supplier_id', supplierId);
             formData.append('doc_type', docType);
+            formData.append('customDocType', customDocType);
             formData.append('file', file);
 
             uploadBtn.disabled = true;
@@ -384,7 +456,10 @@
         }
 
         // Initialize
-        document.addEventListener('DOMContentLoaded', loadSuppliers);
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSuppliers();
+            loadDocTypes();
+        });
     </script>
 </body>
 </html>
