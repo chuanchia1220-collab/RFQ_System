@@ -163,31 +163,35 @@ def get_missing_documents_by_supplier(supplier_ids: List[str]) -> List[Dict[str,
     return execute_query(query, tuple(supplier_ids))
 
 
-def seed_dummy_data():
-    """Inserts dummy data for testing purposes."""
+def import_csv_data():
+    """Imports real data from suppliers.csv."""
+    import os, csv
+
+    csv_path = "suppliers.csv"
+    if not os.path.exists(csv_path) and os.path.exists("../suppliers.csv"):
+        csv_path = "../suppliers.csv"
+
+    if not os.path.exists(csv_path):
+        logging.info(f"{csv_path} not found, skipping import.")
+        return
+
     try:
         # Check if data already exists
         if execute_query("SELECT COUNT(*) as count FROM Supplier_Master")[0]['count'] > 0:
             return
 
-        # Insert Suppliers
-        execute_update("INSERT INTO Supplier_Master (Supplier_ID, Name, Email, pmn31) VALUES (?, ?, ?, ?)", ("V001", "Acme Corp", "vendor1@example.com", "TIPTOP-A1"))
-        execute_update("INSERT INTO Supplier_Master (Supplier_ID, Name, Email, pmn31) VALUES (?, ?, ?, ?)", ("V002", "Globex Inc", "vendor2@example.com", "TIPTOP-B2"))
-        execute_update("INSERT INTO Supplier_Master (Supplier_ID, Name, Email, pmn31) VALUES (?, ?, ?, ?)", ("V003", "Soylent Corp", "vendor3@example.com", "TIPTOP-C3"))
-
-        # Insert Documents
-        execute_update("INSERT INTO Document_Master (Doc_ID, Supplier_ID, Doc_Type, Status) VALUES (?, ?, ?, ?)", ("D101", "V001", "NDA", "signed"))
-        execute_update("INSERT INTO Document_Master (Doc_ID, Supplier_ID, Doc_Type, Status) VALUES (?, ?, ?, ?)", ("D102", "V001", "ISO9001", "pending"))
-
-        execute_update("INSERT INTO Document_Master (Doc_ID, Supplier_ID, Doc_Type, Status) VALUES (?, ?, ?, ?)", ("D103", "V002", "NDA", "pending"))
-        execute_update("INSERT INTO Document_Master (Doc_ID, Supplier_ID, Doc_Type, Status) VALUES (?, ?, ?, ?)", ("D104", "V002", "ISO14001", "pending"))
-
-        execute_update("INSERT INTO Document_Master (Doc_ID, Supplier_ID, Doc_Type, Status) VALUES (?, ?, ?, ?)", ("D105", "V003", "NDA", "signed"))
-
-        logging.info("Dummy data seeded.")
+        with open(csv_path, mode='r', encoding='utf-8-sig') as file:
+            reader = csv.DictReader(file)
+            for idx, row in enumerate(reader):
+                supplier_id = f"V{idx+1:03}"
+                execute_update(
+                    "INSERT INTO Supplier_Master (Supplier_ID, Name, Email, pmn31) VALUES (?, ?, ?, ?)",
+                    (supplier_id, row.get('Name'), row.get('Email'), row.get('Contact'))
+                )
+        logging.info("CSV data imported successfully.")
     except Exception as e:
-        logging.error("Failed to seed dummy data", exc_info=True)
+        logging.error("Failed to import CSV data", exc_info=True)
 
 if __name__ == "__main__":
     init_db()
-    seed_dummy_data()
+    import_csv_data()

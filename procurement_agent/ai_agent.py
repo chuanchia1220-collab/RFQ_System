@@ -128,11 +128,7 @@ def ask_procurement_agent(user_query: str) -> str:
     sql_query = _call_gemini_rest_with_retry(sql_prompt, system_instruction=schema_context).strip()
 
     # Strip markdown if AI ignored the rule
-    if sql_query.startswith("```sql"):
-        sql_query = sql_query[6:]
-    if sql_query.endswith("```"):
-        sql_query = sql_query[:-3]
-    sql_query = sql_query.strip()
+    sql_query = sql_query.replace('```sql', '').replace('```', '').strip()
 
     logging.info(f"Generated SQL: {sql_query}")
 

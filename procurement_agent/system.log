@@ -79,3 +79,5 @@ requests.exceptions.HTTPError: 400 Client Error: Bad Request for url: https://ge
 2026-05-09 15:28:35,703 - ERROR - Max retries reached. Returning error message.
 2026-05-09 15:28:35,704 - INFO - Generated SQL: 抱歉，系統目前無法連線到 AI 引擎，請稍後再試。
 2026-05-09 15:28:35,704 - INFO - 127.0.0.1 - - [09/May/2026 15:28:35] "POST /api/chat HTTP/1.1" 200 -
+2026-05-10 01:13:13,631 - INFO - Database initialized successfully.
+2026-05-10 01:13:13,789 - INFO - CSV data imported successfully.
